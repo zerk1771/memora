@@ -94,8 +94,7 @@ public class BubbleService extends Service {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.LEFT;
-        boolean left = prefs.getBoolean("bubbleLeft", false);
-        lp.x = left ? 0 : dm.widthPixels - box;
+        lp.x = prefs.getInt("bubbleX", dm.widthPixels - box);
         lp.y = prefs.getInt("bubbleY", (int) (dm.heightPixels * 0.6f));
 
         bubble.setOnTouchListener(new View.OnTouchListener() {
@@ -118,11 +117,11 @@ public class BubbleService extends Service {
                             try { openApp().send(); } catch (Exception ignored) { }
                             return true;
                         }
-                        boolean toLeft = lp.x + lp.width / 2 < m.widthPixels / 2;
-                        lp.x = toLeft ? 0 : m.widthPixels - lp.width;
+                        // libre: queda donde la soltás, sólo se evita que salga de la pantalla
+                        lp.x = Math.max(0, Math.min(lp.x, m.widthPixels - lp.width));
                         lp.y = Math.max(0, Math.min(lp.y, m.heightPixels - lp.height));
                         wm.updateViewLayout(bubble, lp);
-                        prefs.edit().putBoolean("bubbleLeft", toLeft).putInt("bubbleY", lp.y).apply();
+                        prefs.edit().putInt("bubbleX", lp.x).putInt("bubbleY", lp.y).apply();
                         return true;
                 }
                 return false;
@@ -140,7 +139,7 @@ public class BubbleService extends Service {
         super.onDestroy();
     }
 
-    /** Círculo carbón con borde lima y carita, igual que la burbuja web. */
+    /** Círculo carbón con borde lima y fotos apiladas (galería), igual que la burbuja web. */
     static class BubbleView extends View {
         final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -155,7 +154,7 @@ public class BubbleService extends Service {
             shadow.setColor(0x55000000);
             stroke.setColor(0xFFA8E063); stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(1.5f * density);
             glyph.setColor(0xFFA8E063); glyph.setStyle(Paint.Style.STROKE); glyph.setStrokeWidth(1.6f * density);
-            glyph.setStrokeCap(Paint.Cap.ROUND);
+            glyph.setStrokeCap(Paint.Cap.ROUND); glyph.setStrokeJoin(Paint.Join.ROUND);
             setContentDescription("Abrir Memora");
         }
 
@@ -165,11 +164,20 @@ public class BubbleService extends Service {
             cv.drawCircle(cx, cy + 1.5f * d, r, shadow);
             cv.drawCircle(cx, cy, r, fill);
             cv.drawCircle(cx, cy, r - stroke.getStrokeWidth() / 2, stroke);
-            float s = dot / 24f;
-            Paint dotP = new Paint(glyph); dotP.setStyle(Paint.Style.FILL);
-            cv.drawCircle(cx - 3 * s, cy - 2 * s, 1.1f * s, dotP);
-            cv.drawCircle(cx + 3 * s, cy - 2 * s, 1.1f * s, dotP);
-            cv.drawArc(new RectF(cx - 3.5f * s, cy - 1.5f * s, cx + 3.5f * s, cy + 4f * s), 20, 140, false, glyph);
+            // Ícono galería en grilla de 24: foto de atrás + foto de adelante con montaña y sol
+            float k = dot * 0.58f / 24f, ox = cx - 12 * k, oy = cy - 12 * k;
+            Paint fillP = new Paint(glyph); fillP.setStyle(Paint.Style.FILL);
+            android.graphics.Path back = new android.graphics.Path();
+            back.moveTo(ox + 7 * k, oy + 4 * k); back.lineTo(ox + 18 * k, oy + 4 * k);
+            back.quadTo(ox + 20 * k, oy + 4 * k, ox + 20 * k, oy + 6 * k); back.lineTo(ox + 20 * k, oy + 15 * k);
+            cv.drawPath(back, glyph);
+            cv.drawRoundRect(new RectF(ox + 3.5f * k, oy + 7.5f * k, ox + 16.5f * k, oy + 19.5f * k), 2 * k, 2 * k, glyph);
+            cv.drawCircle(ox + 8 * k, oy + 11.5f * k, 1.3f * k, fillP);
+            android.graphics.Path hill = new android.graphics.Path();
+            hill.moveTo(ox + 3.5f * k, oy + 17.5f * k); hill.lineTo(ox + 7.5f * k, oy + 13.5f * k);
+            hill.lineTo(ox + 10.5f * k, oy + 16.5f * k); hill.lineTo(ox + 12.5f * k, oy + 14.5f * k);
+            hill.lineTo(ox + 16.5f * k, oy + 18.5f * k);
+            cv.drawPath(hill, glyph);
         }
     }
 }

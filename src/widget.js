@@ -7,6 +7,7 @@ import { exportToFolder, exportToZip, exportToNative } from './exporter.js';
 const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
 
 const I = {
+  gallery: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h11a2 2 0 0 1 2 2v9"/><rect x="3.5" y="7.5" width="13" height="12" rx="2"/><circle cx="8" cy="11.5" r="1.3" fill="currentColor" stroke="none"/><path d="M3.5 17.5l4-4 3 3 2-2 4 4"/></svg>',
   face: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="9" cy="10" r=".6" fill="currentColor"/><circle cx="15" cy="10" r=".6" fill="currentColor"/><path d="M9 15c1.6 1.4 4.4 1.4 6 0"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
@@ -47,8 +48,8 @@ class Memora {
       threshold: await db.getSetting('threshold', sc.DEFAULT_THRESHOLD),
     };
     this.root.innerHTML = `<style>${CSS}</style>
-      <button class="bubble" part="bubble" aria-label="Abrir galería de caras" aria-haspopup="dialog">
-        <span class="dot">${I.face}
+      <button class="bubble" part="bubble" aria-label="Abrir galería" aria-haspopup="dialog">
+        <span class="dot">${I.gallery}
           <svg class="ring" viewBox="0 0 36 36" style="display:none"><circle class="bg" cx="18" cy="18" r="16"/><circle class="fg" cx="18" cy="18" r="16" stroke-dasharray="100.5" stroke-dashoffset="100.5"/></svg>
         </span>
       </button>
@@ -56,7 +57,7 @@ class Memora {
       <section class="sheet" role="dialog" aria-modal="true" aria-label="Memora, caras por carpeta">
         <div class="grab"></div>
         <header class="head">
-          <span class="logo">${I.face}</span>
+          <span class="logo">${I.gallery}</span>
           <div class="grow"><h2>Memora</h2><p>Caras por carpeta · todo local</p></div>
           <button class="iconbtn" data-a="close" aria-label="Cerrar">${I.close}</button>
         </header>
@@ -97,11 +98,14 @@ class Memora {
     const b = this.$('.bubble'); const box = this.bubblePx + 14;
     const W = window.innerWidth; const H = window.innerHeight;
     if (x === undefined) {
-      const { side, y: fy } = this.settings.pos;
-      x = side === 'left' ? 2 : W - box - 2;
-      y = fy * H;
+      const p = this.settings.pos;
+      // posición libre guardada en fracciones de pantalla (compatibilidad con el formato viejo "side")
+      x = typeof p.x === 'number' ? p.x * W : (p.side === 'left' ? 2 : W - box - 2);
+      y = p.y * H;
     }
-    y = Math.min(Math.max(y, 8), H - box - 8);
+    // libre: sólo se evita que salga de la pantalla
+    x = Math.min(Math.max(x, 0), W - box);
+    y = Math.min(Math.max(y, 0), H - box);
     b.style.transform = `translate(${x}px, ${y}px)`;
     this.bxy = { x, y };
   }
@@ -123,9 +127,7 @@ class Memora {
       if (!start) return; start = null; b.classList.remove('dragging');
       if (!moved) return; // el toque simple abre por 'click' (evita el click fantasma sobre el fondo)
       this.justDragged = true; setTimeout(() => { this.justDragged = false; }, 350);
-      const box = this.bubblePx + 14;
-      this.settings.pos = { side: this.bxy.x + box / 2 < window.innerWidth / 2 ? 'left' : 'right', y: this.bxy.y / window.innerHeight };
-      this.placeBubble();
+      this.settings.pos = { x: this.bxy.x / window.innerWidth, y: this.bxy.y / window.innerHeight }; // queda donde la soltás
       await db.setSetting('bubblePos', this.settings.pos);
     };
     b.addEventListener('pointerup', end);
@@ -291,7 +293,7 @@ class Memora {
   tab_settings() {
     const t = this.settings.threshold;
     return `
-      <div class="setting"><p class="t">Tamaño de la burbuja</p><p class="note small">Arrastrala a cualquier borde; se queda donde la dejes.</p>
+      <div class="setting"><p class="t">Tamaño de la burbuja</p><p class="note small">Movela a donde quieras; se queda justo donde la soltás.</p>
         <div class="seg">${SIZES.map((s) => `<button aria-pressed="${s.k === this.settings.size}" data-a="size" data-v="${s.k}"><i style="width:${Math.round(s.px / 2.6)}px;height:${Math.round(s.px / 2.6)}px"></i>${s.l} · ${s.px}px</button>`).join('')}</div></div>
       ${NATIVE ? this.overlaySetting() : ''}
       <div class="setting"><p class="t">Cómo agrupa las caras</p>
