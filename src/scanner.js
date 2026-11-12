@@ -10,7 +10,9 @@ export const DEFAULT_THRESHOLD = 0.5; // distancia euclídea entre descriptores 
 // Archivos elegidos con <input webkitdirectory> (Android): sólo viven en memoria durante la sesión.
 const sessionFiles = new Map(); // sourceId -> Map(path -> File)
 
-export const supportsFSA = () => typeof window.showDirectoryPicker === 'function';
+// Dentro de un iframe (vista previa embebida) el selector nativo está bloqueado: se usa el selector de archivos.
+export const isEmbedded = (() => { try { return window.self !== window.top; } catch { return true; } })();
+export const supportsFSA = () => typeof window.showDirectoryPicker === 'function' && !isEmbedded;
 
 /* ---------- Carpetas ---------- */
 

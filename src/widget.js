@@ -142,7 +142,7 @@ class Memora {
   open() {
     if (this.state.open) return;
     this.state.open = true;
-    history.pushState({ memora: true }, ''); // el botón Atrás de Android cierra el panel
+    try { history.pushState({ memora: true }, ''); } catch { /* vista embebida */ } // el botón Atrás de Android cierra el panel
     this.$('.bubble').classList.add('hidden');
     this.$('.scrim').classList.add('on'); this.$('.sheet').classList.add('on');
     this.render();
@@ -150,12 +150,12 @@ class Memora {
   }
 
   close(fromPop = false) {
-    if (this.closeViewer()) { if (fromPop) history.pushState({ memora: true }, ''); return; }
-    if (this.state.view && fromPop) { this.state.view = null; this.render(); history.pushState({ memora: true }, ''); return; }
+    if (this.closeViewer()) { if (fromPop) try { history.pushState({ memora: true }, ''); } catch {} return; }
+    if (this.state.view && fromPop) { this.state.view = null; this.render(); try { history.pushState({ memora: true }, ''); } catch {} return; }
     this.state.open = false; this.state.view = null; this.state.selecting = false; this.state.sel.clear();
     this.$('.bubble').classList.remove('hidden');
     this.$('.scrim').classList.remove('on'); this.$('.sheet').classList.remove('on');
-    if (!fromPop && history.state?.memora) history.back();
+    try { if (!fromPop && history.state?.memora) history.back(); } catch { /* vista embebida */ }
     this.$('.bubble').focus();
   }
 
@@ -436,6 +436,7 @@ class Memora {
   async export(people) {
     const list = people.map((p) => ({ ...p, items: p.items.filter((i) => !i.photo.hidden) })).filter((p) => p.items.length);
     if (!list.length) return this.toast('No hay fotos visibles para exportar');
+    if (sc.isEmbedded) return this.toast('Armar carpetas funciona con la app instalada, no en la vista previa');
     const n = list.reduce((s, p) => s + p.items.length, 0);
     const fsa = sc.supportsFSA();
     if (!(await this.confirm('Acomodar en carpetas', `Se crea una carpeta por persona (${plural(list.length, 'carpeta', 'carpetas')}, ${plural(n, 'foto', 'fotos')}). ${fsa ? 'Elegí dónde crearlas.' : 'Se descarga un .zip.'} Se copian: los originales no se mueven ni se borran.`, fsa ? 'Elegir destino' : 'Descargar .zip'))) return;
