@@ -195,6 +195,65 @@ export async function setFavorite(photoId, fav) {
 
 const dist = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; s += d * d; } return Math.sqrt(s); };
 
+/* ---------- Analizador: Web Worker con respaldo en el hilo principal ---------- */
+
+let analyzerPromise = null;
+
+function workerAnalyzer() {
+  return new Promise((resolve, reject) => {
+    if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') { reject(new Error('sin worker')); return; }
+    let w;
+    try { w = new Worker(new URL('./analyze-worker.js', import.meta.url), { type: 'module' }); } catch (e) { reject(e); return; }
+    const pending = new Map(); let seq = 0;
+    const fail = (err) => { pending.forEach((p) => p.reject(err)); pending.clear(); };
+    w.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); if (e.data.ok) p.resolve(e.data); else p.reject(new Error(e.data.error)); };
+    w.onerror = (e) => { e.preventDefault?.(); fail(new Error(e.message || 'worker')); };
+    const call = (msg) => new Promise((res, rej) => { const id = ++seq; pending.set(id, { resolve: res, reject: rej }); w.postMessage({ ...msg, id }); });
+    const timer = setTimeout(() => { fail(new Error('el worker no respondió')); w.terminate(); }, 120000);
+    call({ type: 'setup' }).then(() => {
+      clearTimeout(timer);
+      resolve({ mode: 'worker', analyze: async (file) => (await call({ type: 'analyze', file })).out });
+    }, (err) => { clearTimeout(timer); w.terminate(); reject(err); });
+  });
+}
+
+async function mainAnalyzer() {
+  await loadModels();
+  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
+  return {
+    mode: 'main',
+    analyze: async (file) => {
+      let bitmap;
+      try { bitmap = await createImageBitmap(file); } catch { throw new Error('unsupported'); }
+      const origW = bitmap.width; const origH = bitmap.height;
+      const { canvas, scale } = canvasFrom(bitmap, DETECT_MAX);
+      const thumbCanvas = canvasFrom(bitmap, THUMB_MAX).canvas;
+      const thumb = await toBlob(thumbCanvas);
+      const hash = dhash(thumbCanvas);
+      bitmap.close?.();
+      const results = await faceapi.detectAllFaces(canvas, opts).withFaceLandmarks(true).withFaceDescriptors();
+      const faces = [];
+      for (const r of results) {
+        const box = r.detection.box;
+        if (box.width < 24 || box.height < 24) continue;
+        faces.push({ descriptor: Array.from(r.descriptor), box: { x: box.x / scale, y: box.y / scale, w: box.width / scale, h: box.height / scale }, thumb: await faceThumb(canvas, box) });
+      }
+      return { thumb, hash, origW, origH, faces };
+    },
+  };
+}
+
+export function getAnalyzer() {
+  if (!analyzerPromise) {
+    analyzerPromise = workerAnalyzer().catch((err) => {
+      console.warn('[pompa] sin segundo plano, analizo en el hilo principal:', err?.message || err);
+      return mainAnalyzer();
+    });
+    analyzerPromise.catch(() => { analyzerPromise = null; });
+  }
+  return analyzerPromise;
+}
+
 /* ---------- Escaneo ---------- */
 
 export async function scan({ sourceIds = null, onProgress = () => {}, signal } = {}) {
@@ -204,8 +263,7 @@ export async function scan({ sourceIds = null, onProgress = () => {}, signal } =
   const report = { scanned: 0, skipped: 0, faces: 0, unsupported: 0, blocked: [] };
 
   onProgress({ phase: 'models', done: 0, total: 0 });
-  await loadModels();
-  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
+  const analyzer = await getAnalyzer();
 
   for (const src of sources) {
     if ((await sourceAccess(src)) !== 'granted') { report.blocked.push(src.name); continue; }
@@ -227,23 +285,17 @@ export async function scan({ sourceIds = null, onProgress = () => {}, signal } =
       if (prev && prev.size === file.size && prev.lastModified === file.lastModified) { report.skipped++; continue; }
       if (prev) await dropPhotoFaces(id, persons);
 
-      let bitmap;
-      try { bitmap = await createImageBitmap(file); } catch { report.unsupported++; continue; }
-      const origW = bitmap.width; const origH = bitmap.height;
-      const { canvas, scale } = canvasFrom(bitmap, DETECT_MAX);
-      const thumbCanvas = canvasFrom(bitmap, THUMB_MAX).canvas;
-      const thumb = await toBlob(thumbCanvas);
-      const hash = dhash(thumbCanvas);
-      bitmap.close?.();
-
-      let results = [];
-      try { results = await faceapi.detectAllFaces(canvas, opts).withFaceLandmarks(true).withFaceDescriptors(); } catch (e) { console.warn('[memora] detección falló', f.path, e); }
+      // El análisis pesado corre en segundo plano (Web Worker); acá sólo se agrupa y se guarda.
+      let a;
+      try { a = await analyzer.analyze(file); } catch (e) {
+        if (e?.message === 'unsupported') { report.unsupported++; continue; }
+        console.warn('[pompa] análisis falló', f.path, e); report.unsupported++; continue;
+      }
+      const { thumb, hash, origW, origH } = a;
 
       const faces = [];
-      for (const r of results) {
-        const box = r.detection.box;
-        if (box.width < 24 || box.height < 24) continue; // caras diminutas = ruido
-        const descriptor = Array.from(r.descriptor);
+      for (const r of a.faces) {
+        const descriptor = r.descriptor;
         let best = null; let bestD = Infinity;
         for (const p of persons.values()) {
           if (!p.centroid) continue;
@@ -257,11 +309,7 @@ export async function scan({ sourceIds = null, onProgress = () => {}, signal } =
         }
         best.centroid = best.centroid.map((v, i) => (v * best.count + descriptor[i]) / (best.count + 1));
         best.count += 1;
-        faces.push({
-          id: faceId, photoId: id, personId: best.id, descriptor,
-          box: { x: box.x / scale, y: box.y / scale, w: box.width / scale, h: box.height / scale },
-          thumb: await faceThumb(canvas, box),
-        });
+        faces.push({ id: faceId, photoId: id, personId: best.id, descriptor, box: r.box, thumb: r.thumb });
       }
       await db.put('photos', {
         id, sourceId: src.id, path: f.path, name: file.name, size: file.size, lastModified: file.lastModified,
@@ -270,7 +318,7 @@ export async function scan({ sourceIds = null, onProgress = () => {}, signal } =
       await db.putMany('faces', faces);
       await db.putMany('persons', [...new Set(faces.map((x) => x.personId))].map((pid) => persons.get(pid)));
       report.scanned++; report.faces += faces.length;
-      if (report.scanned % 4 === 0) await new Promise((r) => setTimeout(r, 0)); // deja respirar la UI
+      await new Promise((r) => setTimeout(r, 0)); // deja respirar la UI entre foto y foto
     }
 
     // Fotos borradas del disco: se limpian del índice (no se toca el archivo original).

@@ -5,7 +5,7 @@ import * as sc from './scanner.js';
 import { exportToFolder, exportToZip, exportToNative } from './exporter.js';
 
 const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
-const VERSION = '2.1';
+const VERSION = '2.2';
 
 const sv = (p, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${p}</svg>`;
 const I = {
@@ -110,6 +110,7 @@ class Pompa {
     this.root.addEventListener('click', (e) => this.onClick(e));
     this.root.addEventListener('change', (e) => this.onChange(e));
     this.root.addEventListener('input', (e) => this.onInput(e));
+    this.root.addEventListener('focusout', () => setTimeout(() => { if (this.pendingRender && this.state.open && !this.typingIn()) this.render(); }, 250));
     this.$('.scrim').addEventListener('click', () => this.close());
     window.addEventListener('popstate', () => { if (this.state.open && !NATIVE) this.close(true); });
     window.addEventListener('keydown', (e) => this.onKey(e));
@@ -272,8 +273,42 @@ class Pompa {
     if (view?.type === 'person') html = this.viewPerson(view.id);
     else if (view?.type === 'together') html = this.viewTogether(view.ids);
     else html = this[`tab_${tab}`]();
-    this.$('.body').innerHTML = html;
+    // Si estabas escribiendo, el campo nuevo recupera foco, texto y cursor (el teclado no se cierra).
+    const a = this.typingIn();
+    const keep = a && { key: a.dataset.a, v: a.dataset.v || '', value: a.value, s: a.selectionStart, e: a.selectionEnd };
+    const body = this.$('.body'); const top = body.scrollTop;
+    body.innerHTML = html;
+    body.scrollTop = top;
+    if (keep) {
+      const n = [...body.querySelectorAll('input')].find((i) => i.dataset.a === keep.key && (i.dataset.v || '') === keep.v);
+      if (n) { n.value = keep.value; n.focus({ preventScroll: true }); try { n.setSelectionRange(keep.s, keep.e); } catch { /* tipo sin cursor */ } }
+    }
+    this.pendingRender = false;
     this.renderProgress();
+  }
+
+  typingIn() {
+    const a = this.root.activeElement;
+    return a && a.tagName === 'INPUT' && a.type !== 'range' ? a : null;
+  }
+
+  // Actualización en vivo durante el escaneo: nunca interrumpe lo que estás escribiendo.
+  async liveRefresh() {
+    this.data = await sc.snapshot();
+    if (!this.state.open) return;
+    const people = this.data.people.filter((p) => !p.hidden && p.visibleCount).length;
+    this.$('.stats').textContent = `${plural(this.data.visible.length, 'foto', 'fotos')} · ${plural(people, 'persona', 'personas')}`;
+    const a = this.typingIn();
+    if (a) {
+      if (a.dataset.a === 'query') {
+        const grid = this.$('#pgrid');
+        if (grid) { this.prevUrls.forEach((u) => URL.revokeObjectURL(u)); this.prevUrls = this.urls; this.urls = []; grid.innerHTML = this.peopleGrid(); }
+      }
+      this.pendingRender = true; // se redibuja cuando dejes de escribir
+      return;
+    }
+    if (this.state.tab === 'vault' && this.state.pinStep) return; // no tocar el teclado del PIN
+    this.render();
   }
 
   renderProgress() {
@@ -698,7 +733,7 @@ class Pompa {
         sourceIds: ids, signal: this.abort.signal,
         onProgress: (p) => {
           this.state.scan = p; this.setRing(p.total ? p.done / p.total : 0); this.renderProgress();
-          if (Date.now() - last > 1500) { last = Date.now(); this.refresh(); }
+          if (Date.now() - last > 2500) { last = Date.now(); this.liveRefresh(); }
         },
       });
       const msg = r.aborted ? 'Escaneo en pausa' : `${plural(r.scanned, 'foto nueva', 'fotos nuevas')} · ${plural(r.faces, 'cara', 'caras')}`;
