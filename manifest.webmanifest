@@ -1,0 +1,16 @@
+{
+  "name": "Memora · Caras por carpeta",
+  "short_name": "Memora",
+  "description": "Galería flotante que agrupa por persona las fotos de las carpetas que elijas. Todo local.",
+  "lang": "es-AR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#141414",
+  "theme_color": "#141414",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
