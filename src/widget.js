@@ -55,10 +55,9 @@ class Memora {
       </button>
       <div class="scrim"></div>
       <section class="sheet" role="dialog" aria-modal="true" aria-label="Memora, caras por carpeta">
-        <div class="grab"></div>
         <header class="head">
           <span class="logo">${I.gallery}</span>
-          <div class="grow"><h2>Memora</h2><p>Caras por carpeta · todo local</p></div>
+          <div class="grow"><h2>Memora</h2><p>Caras por carpeta</p></div>
           <button class="iconbtn" data-a="close" aria-label="Cerrar">${I.close}</button>
         </header>
         <nav class="tabs" role="tablist">
@@ -83,6 +82,7 @@ class Memora {
     window.addEventListener('popstate', () => { if (this.state.open) this.close(true); });
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.state.open) this.close(); });
     await this.refresh();
+    if (NATIVE) { this.syncNativePos(); this.open(); } // el APK abre directo la app compacta junto a la burbuja
   }
 
   /* ---------- Burbuja ---------- */
@@ -108,6 +108,7 @@ class Memora {
     y = Math.min(Math.max(y, 0), H - box);
     b.style.transform = `translate(${x}px, ${y}px)`;
     this.bxy = { x, y };
+    if (this.state.open) this.placeSheet();
   }
 
   bindBubble() {
@@ -128,12 +129,13 @@ class Memora {
       if (!moved) return; // el toque simple abre por 'click' (evita el click fantasma sobre el fondo)
       this.justDragged = true; setTimeout(() => { this.justDragged = false; }, 350);
       this.settings.pos = { x: this.bxy.x / window.innerWidth, y: this.bxy.y / window.innerHeight }; // queda donde la soltás
+      if (NATIVE) try { window.MemoraNative.setBubblePos(this.settings.pos.x, this.settings.pos.y); } catch { /* sin puente */ }
       await db.setSetting('bubblePos', this.settings.pos);
     };
     b.addEventListener('pointerup', end);
     b.addEventListener('pointercancel', () => { start = null; b.classList.remove('dragging'); this.placeBubble(); });
-    b.addEventListener('click', () => { if (this.justDragged) { this.justDragged = false; return; } this.open(); });
-    window.addEventListener('resize', () => this.placeBubble());
+    b.addEventListener('click', () => { if (this.justDragged) { this.justDragged = false; return; } if (this.state.open) this.close(); else this.open(); });
+    window.addEventListener('resize', () => { this.placeBubble(); if (this.state.open) this.placeSheet(); });
   }
 
   setRing(frac) {
@@ -146,10 +148,12 @@ class Memora {
   open() {
     if (this.state.open) return;
     this.state.open = true;
-    try { history.pushState({ memora: true }, ''); } catch { /* vista embebida */ } // el botón Atrás de Android cierra el panel
-    this.$('.bubble').classList.add('hidden');
-    this.$('.scrim').classList.add('on'); this.$('.sheet').classList.add('on');
+    if (!NATIVE) try { history.pushState({ memora: true }, ''); } catch { /* vista embebida */ } // Atrás cierra el panel
+    this.$('.bubble').classList.add('open');
+    this.$('.bubble').setAttribute('aria-expanded', 'true');
     this.render();
+    this.placeSheet();
+    this.$('.scrim').classList.add('on'); this.$('.sheet').classList.add('on');
     setTimeout(() => this.$('[data-a="close"]').focus(), 50);
   }
 
@@ -157,10 +161,45 @@ class Memora {
     if (this.closeViewer()) { if (fromPop) try { history.pushState({ memora: true }, ''); } catch {} return; }
     if (this.state.view && fromPop) { this.state.view = null; this.render(); try { history.pushState({ memora: true }, ''); } catch {} return; }
     this.state.open = false; this.state.view = null; this.state.selecting = false; this.state.sel.clear();
-    this.$('.bubble').classList.remove('hidden');
+    this.$('.bubble').classList.remove('open');
+    this.$('.bubble').setAttribute('aria-expanded', 'false');
     this.$('.scrim').classList.remove('on'); this.$('.sheet').classList.remove('on');
+    if (NATIVE) { setTimeout(() => { try { window.MemoraNative.minimize(); } catch { /* sin puente */ } }, 220); return; }
     try { if (!fromPop && history.state?.memora) history.back(); } catch { /* vista embebida */ }
     this.$('.bubble').focus();
+  }
+
+  // Panel compacto que se despliega hacia el costado de la burbuja con más espacio.
+  placeSheet() {
+    const sh = this.$('.sheet'); if (!sh || !this.bxy) return;
+    const W = window.innerWidth; const H = window.innerHeight; const box = this.bubblePx + 14; const gap = 4;
+    const pw = Math.min(320, W - 16); const ph = Math.min(540, H - 16);
+    const cx = this.bxy.x + box / 2; const cy = this.bxy.y + box / 2;
+    const toRight = cx < W / 2;
+    let left = toRight ? this.bxy.x + box + gap : this.bxy.x - pw - gap;
+    left = Math.min(Math.max(left, 8), W - pw - 8);
+    const top = Math.min(Math.max(cy - ph / 2, 8), H - ph - 8);
+    Object.assign(sh.style, { left: `${left}px`, top: `${top}px` });
+    sh.style.setProperty('--pw', `${pw}px`); sh.style.setProperty('--ph', `${ph}px`);
+    sh.style.setProperty('--ox', `${Math.min(Math.max(cx - left, 0), pw)}px`);
+    sh.style.setProperty('--oy', `${Math.min(Math.max(cy - top, 0), ph)}px`);
+  }
+
+  // Botón Atrás de Android (lo llama el APK). Siempre lo maneja la galería.
+  nativeBack() {
+    if (this.closeViewer()) return true;
+    const dlg = this.root.querySelector('.dialog'); if (dlg) { dlg.click(); return true; }
+    if (this.state.view) { this.state.view = null; this.render(); return true; }
+    if (this.state.open) { this.close(); return true; }
+    try { window.MemoraNative.minimize(); } catch { /* sin puente */ }
+    return true;
+  }
+
+  syncNativePos() {
+    try {
+      const [fx, fy] = String(window.MemoraNative.bubblePos()).split(',').map(Number);
+      if (Number.isFinite(fx) && Number.isFinite(fy) && fx >= 0) { this.settings.pos = { x: fx, y: fy }; this.placeBubble(); }
+    } catch { /* sin puente */ }
   }
 
   url(blob) { if (!blob) return ''; const u = URL.createObjectURL(blob); this.urls.push(u); return u; }
@@ -198,11 +237,12 @@ class Memora {
   tab_people() {
     const { sources, people, noFaces } = this.data;
     if (!sources.length) {
-      return `<div class="empty"><div class="art">${I.folderPlus}</div><h3>Elegí qué carpetas mirar</h3>
+      return `${this.overlayBanner()}<div class="empty"><div class="art">${I.folderPlus}</div><h3>Elegí qué carpetas mirar</h3>
         <p class="note">Memora sólo lee las carpetas que vos agregues. Detecta las caras en tu dispositivo y arma una carpeta por persona. No se sube nada.</p>
         <button class="btn primary block" data-a="add-source">${I.folderPlus}Agregar carpeta</button></div>`;
     }
     const visible = people.filter((p) => !p.hidden && p.visibleCount);
+    const banner = this.overlayBanner();
     if (!visible.length) {
       return `<div class="empty"><div class="art">${I.face}</div><h3>${this.state.scan ? 'Buscando caras…' : 'Todavía no hay caras'}</h3>
         <p class="note">${this.state.scan ? 'Van a ir apareciendo acá.' : 'Escaneá tus carpetas incluidas para agrupar a las personas.'}</p>
@@ -216,7 +256,7 @@ class Memora {
         <span class="nm ${p.name ? '' : 'unnamed'}">${esc(p.name || 'Sin nombre')}</span>
         <span class="ct">${plural(p.visibleCount, 'foto', 'fotos')}</span>
       </button>`).join('');
-    return `
+    return `${banner}
       <div class="toolbar">
         ${selecting
           ? `<button class="btn" data-a="sel-cancel">${I.close}Listo</button>`
@@ -306,6 +346,13 @@ class Memora {
         <button class="btn danger block" style="margin-top:10px" data-a="wipe">${I.trash}Borrar todo el índice</button></div>`;
   }
 
+  overlayBanner() {
+    if (!NATIVE) return '';
+    try { if (window.MemoraNative.canOverlay()) return ''; } catch { return ''; }
+    return `<div class="banner"><p>Para tener la burbuja encima de otras apps, Android pide un permiso.</p>
+      <button class="btn primary" data-a="overlay-on">Activar</button></div>`;
+  }
+
   overlaySetting() {
     let on = false; let can = false;
     try { on = window.MemoraNative.overlayEnabled(); can = window.MemoraNative.canOverlay(); } catch { /* sin puente */ }
@@ -316,14 +363,18 @@ class Memora {
         <button class="switch" role="switch" aria-checked="${active}" aria-label="Burbuja sobre otras apps" data-a="overlay"></button></div>`;
   }
 
-  onNativeResume() { if (this.state.open && this.state.tab === 'settings' && !this.state.view) this.render(); }
+  onNativeResume() {
+    this.syncNativePos();
+    if (!this.state.open) this.open(); else this.render();
+  }
 
   /* ---------- Eventos ---------- */
   async onChange(e) {
     const t = e.composedPath()[0];
     if (t.classList?.contains('picker')) {
-      const files = t.files; t.value = '';
-      if (!files?.length) return;
+      const files = [...(t.files || [])]; // copiar ANTES de limpiar: limpiar el input vacía su lista
+      t.value = '';
+      if (!files.length) return this.toast('Esa carpeta no tiene fotos compatibles');
       const src = await sc.addSourceFromFiles(files);
       this.toast(`Carpeta “${src.name}” agregada`);
       await this.refresh(); this.startScan([src.id]);
@@ -373,6 +424,7 @@ class Memora {
         case 'size': this.settings.size = v; await db.setSetting('bubbleSize', v); this.applySize();
           if (NATIVE) try { window.MemoraNative.setBubbleSize((SIZES.find((x) => x.k === v) || SIZES[1]).px); } catch { /* sin puente */ }
           return this.render();
+        case 'overlay-on': window.MemoraNative.setOverlay(true); return this.toast('Activá “Mostrar sobre otras apps” y volvé');
         case 'overlay': {
           const M = window.MemoraNative; const active = M.overlayEnabled() && M.canOverlay();
           if (active) { M.setOverlay(false); this.toast('Burbuja sólo dentro de Memora'); }
@@ -398,13 +450,19 @@ class Memora {
   }
 
   async addSource() {
-    if (sc.supportsFSA()) {
-      const src = await sc.addSourceFromPicker();
-      this.toast(`Carpeta “${src.name}” agregada`);
-      await this.refresh(); this.startScan([src.id]);
-    } else {
-      this.$('.picker').click(); // Android/iOS: selector de carpeta del sistema
+    if (!sc.supportsFSA()) { this.$('.picker').click(); return; } // Android/iOS/APK: selector de carpeta del sistema
+    let src;
+    try {
+      src = await sc.addSourceFromPicker();
+    } catch (err) {
+      if (err?.name === 'AbortError' && err?.message?.toLowerCase().includes('abort')) return; // canceló el usuario
+      // El navegador anuncia el selector pero no lo deja usar: caemos al selector clásico.
+      this.toast('Elegí la carpeta en el selector del sistema');
+      this.$('.picker').click();
+      return;
     }
+    this.toast(`Carpeta “${src.name}” agregada`);
+    await this.refresh(); this.startScan([src.id]);
   }
 
   async startScan(ids) {

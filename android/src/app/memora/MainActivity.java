@@ -52,7 +52,7 @@ public class MainActivity extends Activity {
         super.onCreate(saved);
         prefs = getSharedPreferences("memora", MODE_PRIVATE);
         web = new WebView(this);
-        web.setBackgroundColor(0xFF141414);
+        web.setBackgroundColor(0x00000000); // transparente: se ve la app de atrás
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -283,7 +283,21 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface public boolean overlayEnabled() {
-            return prefs.getBoolean("overlay", false);
+            return prefs.getBoolean("overlay", true);
+        }
+
+        /** Posición compartida con la burbuja nativa, en fracciones de pantalla: "x,y". */
+        @JavascriptInterface public String bubblePos() {
+            return prefs.getFloat("bubbleFX", -1f) + "," + prefs.getFloat("bubbleFY", 0.6f);
+        }
+
+        @JavascriptInterface public void setBubblePos(float fx, float fy) {
+            prefs.edit().putFloat("bubbleFX", fx).putFloat("bubbleFY", fy).apply();
+        }
+
+        /** Cerrar la app compacta: vuelve a lo que estabas usando y queda la burbuja. */
+        @JavascriptInterface public void minimize() {
+            runOnUiThread(new Runnable() { public void run() { moveTaskToBack(true); } });
         }
 
         @JavascriptInterface public void setOverlay(boolean on) {
@@ -317,14 +331,18 @@ public class MainActivity extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
-        if (prefs.getBoolean("overlay", false) && Settings.canDrawOverlays(this) && !isFinishing()) {
+        if (prefs.getBoolean("overlay", true) && Settings.canDrawOverlays(this) && !isFinishing()) {
             BubbleService.start(this);
         }
     }
 
     @Override
     public void onBackPressed() {
-        if (web.canGoBack()) web.goBack();       // cierra visor → persona → panel
-        else moveTaskToBack(true);              // la app sigue viva y aparece la burbuja
+        // La galería decide: cierra visor → persona → panel; al final vuelve a la app de atrás.
+        web.evaluateJavascript("window.__memora ? window.__memora.nativeBack() : false", new ValueCallback<String>() {
+            public void onReceiveValue(String handled) {
+                if (!"true".equals(handled)) moveTaskToBack(true);
+            }
+        });
     }
 }

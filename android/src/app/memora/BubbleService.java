@@ -94,8 +94,9 @@ public class BubbleService extends Service {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.LEFT;
-        lp.x = prefs.getInt("bubbleX", dm.widthPixels - box);
-        lp.y = prefs.getInt("bubbleY", (int) (dm.heightPixels * 0.6f));
+        float fx = prefs.getFloat("bubbleFX", -1f), fy = prefs.getFloat("bubbleFY", 0.6f);
+        lp.x = fx < 0 ? dm.widthPixels - box : Math.round(fx * dm.widthPixels);
+        lp.y = Math.round(fy * dm.heightPixels);
 
         bubble.setOnTouchListener(new View.OnTouchListener() {
             float sx, sy; int ox, oy; boolean moved;
@@ -121,7 +122,7 @@ public class BubbleService extends Service {
                         lp.x = Math.max(0, Math.min(lp.x, m.widthPixels - lp.width));
                         lp.y = Math.max(0, Math.min(lp.y, m.heightPixels - lp.height));
                         wm.updateViewLayout(bubble, lp);
-                        prefs.edit().putInt("bubbleX", lp.x).putInt("bubbleY", lp.y).apply();
+                        prefs.edit().putFloat("bubbleFX", lp.x / (float) m.widthPixels).putFloat("bubbleFY", lp.y / (float) m.heightPixels).apply();
                         return true;
                 }
                 return false;

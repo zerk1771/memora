@@ -12,7 +12,8 @@ const sessionFiles = new Map(); // sourceId -> Map(path -> File)
 
 // Dentro de un iframe (vista previa embebida) el selector nativo está bloqueado: se usa el selector de archivos.
 export const isEmbedded = (() => { try { return window.self !== window.top; } catch { return true; } })();
-export const supportsFSA = () => typeof window.showDirectoryPicker === 'function' && !isEmbedded;
+// En el APK (WebView) el selector nativo de escritorio existe pero no funciona: se usa el del sistema.
+export const supportsFSA = () => typeof window.showDirectoryPicker === 'function' && !isEmbedded && typeof window.MemoraNative === 'undefined';
 
 /* ---------- Carpetas ---------- */
 
@@ -28,7 +29,7 @@ export async function addSourceFromPicker() {
 }
 
 export async function addSourceFromFiles(fileList) {
-  const files = [...fileList].filter((f) => IMG_RE.test(f.name));
+  const files = [...fileList].filter((f) => IMG_RE.test(f.name) || (f.type || '').startsWith('image/'));
   const first = fileList[0];
   const rel = (first && first.webkitRelativePath) || '';
   let nativeName = '';

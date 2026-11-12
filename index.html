@@ -15,10 +15,12 @@
     h1{font-size:26px;letter-spacing:-.4px;margin:0 0 6px} h1 span{color:var(--lime)}
     p{color:var(--muted);line-height:1.5;font-size:14.5px;margin:0 0 14px}
     .card{background:var(--carbon-2);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-top:14px}
+    html.native,html.native body{background:transparent} html.native main{display:none}
     .card b{color:var(--cream)} ol{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:14px;line-height:1.7}
   </style>
 </head>
 <body>
+  <script>if (window.MemoraNative) document.documentElement.classList.add('native');</script>
   <main>
     <h1>Memora <span>·</span> caras</h1>
     <p>La burbuja chiquita es la galería. Movela a donde quieras y tocala para abrirla.</p>
