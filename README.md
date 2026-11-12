@@ -13,6 +13,10 @@
 | **Recuerdo**: presentación a pantalla completa con fundidos y zoom lento | Persona / Juntos |
 | **Línea de tiempo** por mes y **Favoritas** | Fotos |
 | **Duplicadas**: detecta fotos casi iguales y guarda las copias en la bóveda (nada se borra) | Fotos → Duplicadas |
+| **Papeles y Capturas**: separa fotos de papeles, fotocopias, tickets, carteles y monitores | Fotos |
+| **Borrar**: capturas, papeles, borrosas, oscuras, quemadas y repetidas para revisar y borrar del teléfono (con confirmación) | Borrar |
+| **Escaneo en dos pasadas**: primero ordena todas las fotos (rápido), después busca caras en segundo plano y sólo en fotos | — |
+| **Ventana de tamaño ajustable** (barrita inferior o Compacta/Normal/Grande) | Ajustes |
 | **Bóveda con PIN** para personas y fotos ocultas | Bóveda |
 | **Armar carpetas**: copia las fotos a una carpeta por persona | Personas |
 | Tema Sistema / Oscuro / Claro | Ajustes |

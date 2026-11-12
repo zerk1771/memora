@@ -1,6 +1,7 @@
 // Pompa · análisis en segundo plano (Web Worker): decodifica, hace miniaturas, huella visual
 // y reconocimiento facial sin trabar la pantalla ni el teclado.
 import * as faceapi from '../vendor/face-api.esm.js';
+import { measure, classify } from './quality.js';
 
 const DETECT_MAX = 960;
 const THUMB_MAX = 320;
@@ -69,6 +70,51 @@ async function faceThumb(canvas, box) {
   return c.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
 }
 
+// Pasada 1 (rápida): miniatura, huella y medidas de calidad. No usa reconocimiento facial.
+function measureBitmap(bitmap) {
+  const { canvas } = scaled(bitmap, 384);
+  const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data;
+  return measure(d, canvas.width, canvas.height);
+}
+
+async function indexPhoto(file) {
+  let bitmap;
+  try { bitmap = await createImageBitmap(file); } catch { throw new Error('unsupported'); }
+  const origW = bitmap.width; const origH = bitmap.height;
+  const thumbC = scaled(bitmap, THUMB_MAX).canvas;
+  const q = measureBitmap(bitmap);
+  bitmap.close?.();
+  const thumb = await thumbC.convertToBlob({ type: 'image/jpeg', quality: 0.78 });
+  return { thumb, hash: dhash(thumbC), origW, origH, q, kind: classify(file.name || '', q) };
+}
+
+// Pasada 2: sólo caras (descriptores para agrupar por persona).
+async function findFaces(file) {
+  await setup();
+  let bitmap;
+  try { bitmap = await createImageBitmap(file); } catch { throw new Error('unsupported'); }
+  const { canvas, scale } = scaled(bitmap, DETECT_MAX);
+  bitmap.close?.();
+  const img = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
+  const input = faceapi.tf.browser.fromPixels(img);
+  let results = [];
+  try {
+    results = await faceapi.detectAllFaces(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 }))
+      .withFaceLandmarks(true).withFaceDescriptors();
+  } finally { input.dispose(); }
+  const faces = [];
+  for (const r of results) {
+    const box = r.detection.box;
+    if (box.width < 24 || box.height < 24) continue;
+    faces.push({
+      descriptor: Array.from(r.descriptor),
+      box: { x: box.x / scale, y: box.y / scale, w: box.width / scale, h: box.height / scale },
+      thumb: await faceThumb(canvas, box),
+    });
+  }
+  return { faces };
+}
+
 async function analyze(file) {
   await setup();
   const bitmap = await createImageBitmap(file);
@@ -102,9 +148,10 @@ self.onmessage = async (e) => {
   const { id, type, file } = e.data;
   try {
     if (type === 'setup') { const backend = await setup(); self.postMessage({ id, ok: true, backend }); return; }
-    const out = await analyze(file);
+    if (type === 'ping') { self.postMessage({ id, ok: true }); return; }
+    const out = type === 'index' ? await indexPhoto(file) : type === 'faces' ? await findFaces(file) : await analyze(file);
     self.postMessage({ id, ok: true, out });
   } catch (err) {
-    self.postMessage({ id, ok: false, error: String(err?.name === 'InvalidStateError' || /decode|source image/i.test(String(err?.message)) ? 'unsupported' : err?.message || err) });
+    self.postMessage({ id, ok: false, error: String(err?.message === 'unsupported' || err?.name === 'InvalidStateError' || /decode|source image/i.test(String(err?.message)) ? 'unsupported' : err?.message || err) });
   }
 };

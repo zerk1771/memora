@@ -45,6 +45,8 @@ public class MainActivity extends Activity {
     volatile String lastFolder = "Carpeta";
     Uri destTree;
     final Map<String, Uri> destDirs = new HashMap<>();
+    /** carpeta/nombre → documento, para poder borrar lo que elegiste en “Borrar”. */
+    final Map<String, Uri> picked = new java.util.concurrent.ConcurrentHashMap<>();
     SharedPreferences prefs;
 
     @Override
@@ -84,7 +86,10 @@ public class MainActivity extends Activity {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = cb;
                 try {
-                    startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_PICK_SOURCE);
+                    Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+                    startActivityForResult(pick, REQ_PICK_SOURCE);
                 } catch (Exception e) {
                     fileCallback = null;
                     return false;
@@ -150,14 +155,18 @@ public class MainActivity extends Activity {
             if (cb == null) return;
             if (tree == null) { cb.onReceiveValue(null); return; }
             try {
-                getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            } catch (Exception ignored) { }
+                getContentResolver().takePersistableUriPermission(tree,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            } catch (Exception e) {
+                try { getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception ignored2) { }
+            }
             lastFolder = folderName(tree);
+            final String folder = lastFolder;
             new Thread(new Runnable() {
                 public void run() {
                     final List<Uri> out = new ArrayList<>();
                     try {
-                        walk(tree, DocumentsContract.getTreeDocumentId(tree), out, 0);
+                        walk(tree, DocumentsContract.getTreeDocumentId(tree), out, 0, folder);
                     } catch (Exception ignored) { }
                     runOnUiThread(new Runnable() {
                         public void run() { cb.onReceiveValue(out.toArray(new Uri[0])); }
@@ -187,7 +196,7 @@ public class MainActivity extends Activity {
         return name.isEmpty() ? "Almacenamiento" : name;
     }
 
-    void walk(Uri tree, String docId, List<Uri> out, int depth) {
+    void walk(Uri tree, String docId, List<Uri> out, int depth, String folder) {
         if (out.size() >= MAX_FILES) return;
         Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId);
         Cursor c = getContentResolver().query(children, new String[]{
@@ -200,9 +209,11 @@ public class MainActivity extends Activity {
                 String id = c.getString(0), mime = c.getString(1), name = c.getString(2);
                 if (name == null || name.startsWith(".")) continue;
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
-                    if (depth < 6) walk(tree, id, out, depth + 1);
+                    if (depth < 6) walk(tree, id, out, depth + 1, folder);
                 } else if (mime != null && mime.startsWith("image/")) {
-                    out.add(DocumentsContract.buildDocumentUriUsingTree(tree, id));
+                    Uri doc = DocumentsContract.buildDocumentUriUsingTree(tree, id);
+                    out.add(doc);
+                    picked.put(folder + "/" + name, doc);
                 }
             }
         } finally {
@@ -273,6 +284,19 @@ public class MainActivity extends Activity {
                 OutputStream os = getContentResolver().openOutputStream(file);
                 try { os.write(Base64.decode(b64, Base64.DEFAULT)); } finally { os.close(); }
                 return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        /** Borra una foto elegida por el usuario en “Borrar” (después de confirmar en la app). */
+        @JavascriptInterface public boolean deleteFile(String folder, String name) {
+            Uri doc = picked.get(folder + "/" + name);
+            if (doc == null) return false;
+            try {
+                boolean ok = DocumentsContract.deleteDocument(getContentResolver(), doc);
+                if (ok) picked.remove(folder + "/" + name);
+                return ok;
             } catch (Exception e) {
                 return false;
             }

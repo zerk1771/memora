@@ -3,9 +3,10 @@ import { CSS, FONT_FACES } from './styles.js';
 import * as db from './db.js';
 import * as sc from './scanner.js';
 import { exportToFolder, exportToZip, exportToNative } from './exporter.js';
+import { issue } from './quality.js';
 
 const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
-const VERSION = '2.2';
+const VERSION = '2.3';
 
 const sv = (p, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${p}</svg>`;
 const I = {
@@ -37,6 +38,11 @@ const I = {
   eyeOff: sv('<path d="M3 3l18 18M10.6 6.1A9.7 9.7 0 0 1 12 6c5 0 8.5 4.5 9 6-.3.8-1.2 2.3-2.7 3.6M6.4 7.6C4.6 8.9 3.4 10.7 3 12c.5 1.5 4 6 9 6 1.5 0 2.9-.4 4-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'),
   sparkle: sv('<path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>'),
   shield: sv('<path d="M12 3.5l7 2.8v5.4c0 4.3-3 7.6-7 8.8-4-1.2-7-4.5-7-8.8V6.3z"/><path d="M9 12l2.2 2.2L15.5 10"/>'),
+  doc: sv('<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10.5a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5z"/><path d="M14 3.5V8h4M9 12h6M9 15.5h6"/>'),
+  phone: sv('<rect x="6.5" y="3" width="11" height="18" rx="2.5"/><path d="M10.5 17.5h3"/>'),
+  blur: sv('<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.5 2.5"/><circle cx="12" cy="12" r="3"/>'),
+  moon: sv('<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/>'),
+  sun: sv('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>'),
   del: sv('<path d="M9 6h11v12H9l-5-6z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/>'),
 };
 
@@ -46,7 +52,16 @@ const plural = (n, a, b) => `${nf.format(n)} ${n === 1 ? a : b}`;
 const SIZES = [{ k: 'mini', px: 24, l: 'Mini' }, { k: 'chica', px: 30, l: 'Chica' }, { k: 'media', px: 38, l: 'Media' }];
 const IDLE = [{ k: 1, l: 'Sólida' }, { k: 0.72, l: 'Suave' }, { k: 0.45, l: 'Discreta' }];
 const THEMES = [{ k: 'system', l: 'Sistema' }, { k: 'dark', l: 'Oscuro' }, { k: 'light', l: 'Claro' }];
-const TABS = [['people', 'Personas', I.people], ['photos', 'Fotos', I.photos], ['sources', 'Carpetas', I.folder], ['vault', 'Bóveda', I.lock], ['settings', 'Ajustes', I.gear]];
+const TABS = [['people', 'Personas', I.people], ['photos', 'Fotos', I.photos], ['clean', 'Borrar', I.trash], ['sources', 'Carpetas', I.folder], ['vault', 'Bóveda', I.lock], ['settings', 'Ajustes', I.gear]];
+const WINS = [{ k: 'compacta', l: 'Compacta', w: 296, h: 480 }, { k: 'normal', l: 'Normal', w: 328, h: 560 }, { k: 'grande', l: 'Grande', w: 9999, h: 9999 }];
+// Categorías de “Borrar”. Calibradas con fotos de muestra; siempre las revisás antes.
+const CLEAN = [
+  { k: 'shots', l: 'Capturas de pantalla', d: 'Capturas que ya cumplieron su función.', test: (p) => p.kind === 'screenshot' },
+  { k: 'docs', l: 'Papeles y pantallas', d: 'Fotos de papeles, carteles, tickets o monitores sacadas para consultar algo.', test: (p) => p.kind === 'doc' },
+  { k: 'blur', l: 'Borrosas o movidas', d: 'Salieron fuera de foco.', test: (p) => p.kind === 'photo' && issue(p.q) === 'blur' },
+  { k: 'dark', l: 'Muy oscuras', d: 'Casi no se ve nada.', test: (p) => issue(p.q) === 'dark' },
+  { k: 'burnt', l: 'Quemadas', d: 'Demasiada luz: se perdió la imagen.', test: (p) => issue(p.q) === 'burnt' },
+];
 const PAGE = 120;
 
 async function sha(text) {
@@ -61,7 +76,7 @@ class Pompa {
     host.appendChild(this.hostEl);
     this.root = this.hostEl.attachShadow({ mode: 'open' });
     this.state = { open: false, tab: 'people', view: null, selecting: false, sel: new Set(), scan: null,
-      query: '', filter: 'all', limit: PAGE, vaultOpen: false, pin: '', pinStep: null, pinFirst: '', dupes: null };
+      query: '', filter: 'all', limit: PAGE, cleanSel: new Set(), vaultOpen: false, pin: '', pinStep: null, pinFirst: '', dupes: null };
     this.urls = []; this.prevUrls = [];
     this.data = { sources: [], people: [], visible: [], noFaces: [], hiddenPhotos: [], photos: [] };
   }
@@ -79,6 +94,7 @@ class Pompa {
       theme: await db.getSetting('theme', 'system'),
       idle: await db.getSetting('idle', 1),
       pinHash: await db.getSetting('pinHash', ''),
+      win: await db.getSetting('win', null),
     };
     this.root.innerHTML = `<style>${CSS}</style>
       <button class="bubble" part="bubble" aria-label="Abrir Pompa" aria-expanded="false">
@@ -97,6 +113,7 @@ class Pompa {
         <nav class="nav" role="tablist">
           ${TABS.map(([k, l, ic]) => `<button class="tab" role="tab" data-a="tab" data-v="${k}" aria-label="${l}">${ic}<span>${l}</span></button>`).join('')}
         </nav>
+        <div class="resize" role="slider" aria-label="Cambiar tamaño de la ventana" tabindex="0"><i></i></div>
       </section>
       <input type="file" class="picker" webkitdirectory directory multiple accept="image/*" hidden>
       <div class="toast" role="status" aria-live="polite"></div>`;
@@ -107,9 +124,18 @@ class Pompa {
     this.applyTheme(); this.applyIdle(); this.applySize();
     requestAnimationFrame(() => requestAnimationFrame(() => bubble.classList.remove('dragging')));
     this.bindBubble();
+    this.bindResize();
     this.root.addEventListener('click', (e) => this.onClick(e));
     this.root.addEventListener('change', (e) => this.onChange(e));
     this.root.addEventListener('input', (e) => this.onInput(e));
+    // Mantener apretado en “Borrar”: ver la foto grande antes de decidir.
+    this.root.addEventListener('contextmenu', (e) => {
+      const el = e.composedPath().find((n) => n.classList?.contains('pick')); if (!el) return;
+      e.preventDefault();
+      const g = this.cleanGroups().find((x) => x.k === this.state.view?.cat); if (!g) return;
+      this.ctxList = g.items.map((p) => ({ photo: p }));
+      this.openViewer('list', el.dataset.v);
+    });
     this.root.addEventListener('focusout', () => setTimeout(() => { if (this.pendingRender && this.state.open && !this.typingIn()) this.render(); }, 250));
     this.$('.scrim').addEventListener('click', () => this.close());
     window.addEventListener('popstate', () => { if (this.state.open && !NATIVE) this.close(true); });
@@ -211,15 +237,46 @@ class Pompa {
   placeSheet() {
     const sh = this.$('.sheet'); if (!sh || !this.bxy) return;
     const W = window.innerWidth; const H = window.innerHeight; const box = this.bubblePx + 14; const gap = 4;
-    const pw = Math.min(328, W - 16); const ph = Math.min(560, H - 16);
+    const win = this.settings.win || { w: 328, h: 560 };
+    const pw = Math.round(Math.min(Math.max(win.w, 260), W - 16)); const ph = Math.round(Math.min(Math.max(win.h, 360), H - 16));
     const cx = this.bxy.x + box / 2; const cy = this.bxy.y + box / 2;
-    let left = cx < W / 2 ? this.bxy.x + box + gap : this.bxy.x - pw - gap;
+    this.toRight = cx < W / 2;
+    let left = this.toRight ? this.bxy.x + box + gap : this.bxy.x - pw - gap;
     left = Math.min(Math.max(left, 8), W - pw - 8);
     const top = Math.min(Math.max(cy - ph / 2, 8), H - ph - 8);
     Object.assign(sh.style, { left: `${left}px`, top: `${top}px` });
     sh.style.setProperty('--pw', `${pw}px`); sh.style.setProperty('--ph', `${ph}px`);
     sh.style.setProperty('--ox', `${Math.min(Math.max(cx - left, 0), pw)}px`);
     sh.style.setProperty('--oy', `${Math.min(Math.max(cy - top, 0), ph)}px`);
+  }
+
+  // Agarradera inferior: arrastrá para cambiar ancho y alto. Se guarda.
+  bindResize() {
+    const g = this.$('.resize'); const sh = this.$('.sheet'); let st = null;
+    g.addEventListener('pointerdown', (e) => {
+      const r = sh.getBoundingClientRect();
+      st = { x: e.clientX, y: e.clientY, w: r.width, h: r.height };
+      sh.classList.add('resizing'); try { g.setPointerCapture(e.pointerId); } catch { /* */ }
+    });
+    g.addEventListener('pointermove', (e) => {
+      if (!st) return;
+      const dx = (e.clientX - st.x) * (this.toRight ? 1 : -1);
+      const dy = (e.clientY - st.y) * 2; // la ventana crece centrada en la burbuja
+      this.settings.win = { w: st.w + dx, h: st.h + dy };
+      this.placeSheet();
+    });
+    const end = async () => {
+      if (!st) return; st = null; sh.classList.remove('resizing');
+      const r = sh.getBoundingClientRect();
+      this.settings.win = { w: Math.round(r.width), h: Math.round(r.height) };
+      vibrate(5); await db.setSetting('win', this.settings.win);
+    };
+    g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
+    g.addEventListener('keydown', async (e) => {
+      const step = { ArrowUp: [0, -24], ArrowDown: [0, 24], ArrowLeft: [-16, 0], ArrowRight: [16, 0] }[e.key]; if (!step) return;
+      e.preventDefault(); const r = sh.getBoundingClientRect();
+      this.settings.win = { w: r.width + step[0], h: r.height + step[1] }; this.placeSheet(); await db.setSetting('win', this.settings.win);
+    });
   }
 
   closeOverlay() {
@@ -272,6 +329,7 @@ class Pompa {
     let html;
     if (view?.type === 'person') html = this.viewPerson(view.id);
     else if (view?.type === 'together') html = this.viewTogether(view.ids);
+    else if (view?.type === 'clean') html = this.viewClean(view.cat);
     else html = this[`tab_${tab}`]();
     // Si estabas escribiendo, el campo nuevo recupera foco, texto y cursor (el teclado no se cierra).
     const a = this.typingIn();
@@ -315,10 +373,11 @@ class Pompa {
     const el = this.$('.progress'); const s = this.state.scan;
     el.hidden = !s; if (!s) return;
     const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-    el.innerHTML = `<div class="txt"><b>${s.phase === 'models' ? 'Preparando el reconocimiento…' : `${esc(s.label || 'Buscando caras')} · <span class="num">${pct}%</span>`}</b>
-      <span class="ellipsis num">${s.phase === 'models' ? 'Sólo la primera vez · queda guardado' : `${esc(s.source)} · ${nf.format(s.done)} de ${nf.format(s.total)}`}</span>
+    const step = s.phase === 'index' ? 'Paso 1 de 2 · ' : s.phase === 'faces' ? 'Paso 2 de 2 · ' : '';
+    el.innerHTML = `<div class="txt"><b>${s.phase === 'models' || s.phase === 'indexed' ? esc(s.label || 'Preparando…') : `${esc(s.label || 'Buscando caras')} · <span class="num">${pct}%</span>`}</b>
+      <span class="ellipsis num">${s.phase === 'models' ? 'Un momento' : s.phase === 'indexed' ? 'Ya podés usar Fotos y Borrar' : `${step}${esc(s.source)} · ${nf.format(s.done)} de ${nf.format(s.total)}`}</span>
       <div class="bar"><i style="width:${pct}%"></i></div></div>
-      ${s.label ? '' : '<button class="stop" data-a="cancel-scan">Frenar</button>'}`;
+      ${s.noStop ? '' : '<button class="stop" data-a="cancel-scan">Frenar</button>'}`;
   }
 
   /* ---------- Personas ---------- */
@@ -428,14 +487,15 @@ class Pompa {
     }
     const f = this.state.filter;
     const favs = visible.filter((p) => p.fav);
-    const chips = [['all', 'Todas', I.photos], ['fav', `Favoritas${favs.length ? ` ${favs.length}` : ''}`, I.star], ['dupes', 'Duplicadas', I.copies], ['nofaces', 'Sin caras', I.gallery]]
+    const docs = visible.filter((p) => p.kind === 'doc'); const shots = visible.filter((p) => p.kind === 'screenshot');
+    const chips = [['all', 'Todas', I.photos], ['fav', `Favoritas${favs.length ? ` ${favs.length}` : ''}`, I.star], ['docs', `Papeles${docs.length ? ` ${docs.length}` : ''}`, I.doc], ['shots', `Capturas${shots.length ? ` ${shots.length}` : ''}`, I.phone], ['dupes', 'Duplicadas', I.copies], ['nofaces', 'Sin caras', I.gallery]]
       .map(([k, l, ic]) => `<button class="chip" data-a="filter" data-v="${k}" aria-pressed="${f === k}">${ic}${l}</button>`).join('');
     let content;
     if (f === 'dupes') content = this.dupesView();
     else {
-      const list = f === 'fav' ? favs : f === 'nofaces' ? noFaces : visible;
+      const list = f === 'fav' ? favs : f === 'nofaces' ? noFaces : f === 'docs' ? docs : f === 'shots' ? shots : visible;
       this.ctxList = list.map((p) => ({ photo: p }));
-      content = list.length ? this.timeline(list) : `<p class="note" style="text-align:center;padding:28px 8px">${f === 'fav' ? 'Tocá la estrella en una foto para tenerla acá.' : 'Nada por acá.'}</p>`;
+      content = list.length ? this.timeline(list) : `<p class="note" style="text-align:center;padding:28px 8px">${f === 'fav' ? 'Tocá la estrella en una foto para tenerla acá.' : f === 'docs' ? 'No hay fotos de papeles ni de pantallas.' : 'Nada por acá.'}</p>`;
     }
     return `<div class="chips">${chips}</div>${content}`;
   }
@@ -456,15 +516,7 @@ class Pompa {
 
   dupesView() {
     if (!this.state.dupes) {
-      if (!this.dupesBusy) {
-        this.dupesBusy = true;
-        sc.ensureHashes().then(async (n) => {
-          if (n) this.data = await sc.snapshot();
-          this.state.dupes = sc.findDuplicates(this.data.visible);
-          this.dupesBusy = false;
-          if (this.state.open && this.state.tab === 'photos' && this.state.filter === 'dupes') this.render();
-        }).catch(() => { this.dupesBusy = false; });
-      }
+      if (!this.dupesBusy) this.computeDupes();
       return '<p class="note" style="text-align:center;padding:28px 8px">Comparando fotos…</p>';
     }
     const groups = this.state.dupes;
@@ -474,6 +526,85 @@ class Pompa {
       <button class="btn primary block" style="margin-bottom:14px" data-a="dupes-all">${I.copies}Guardar ${plural(extra, 'copia', 'copias')} en la bóveda</button>
       ${groups.map((g, i) => `<div class="dupe"><div class="strip">${g.slice(0, 4).map((p, j) => `<img class="${j === 0 ? 'keep' : ''}" alt="" src="${this.url(p.thumb)}">`).join('')}</div>
         <div class="meta"><p class="num">${plural(g.length, 'foto', 'fotos')} · ${esc(g[0].name)}</p><button class="btn ghost" data-a="dupes-one" data-v="${i}">Ordenar</button></div></div>`).join('')}`;
+  }
+
+  /* ---------- Borrar ---------- */
+  cleanGroups() {
+    const vis = this.data.visible;
+    const groups = CLEAN.map((c) => ({ ...c, items: vis.filter(c.test) }));
+    if (this.state.dupes) groups.push({ k: 'dupes', l: 'Repetidas', d: 'Copias casi iguales. Se conserva la de mejor calidad.', items: this.state.dupes.flatMap((g) => g.slice(1)) });
+    return groups;
+  }
+
+  tab_clean() {
+    if (!this.data.visible.length) {
+      return `<div class="empty"><div class="art">${I.trash}</div><h3>Liberá espacio</h3>
+        <p class="note">Cuando agregues una carpeta, acá aparecen las fotos que conviene borrar: capturas, papeles, borrosas y repetidas.</p>
+        <button class="btn primary block" data-a="add-source">${I.folderPlus}Elegir una carpeta</button></div>`;
+    }
+    if (!this.state.dupes && !this.dupesBusy) this.computeDupes();
+    const icons = { shots: I.phone, docs: I.doc, blur: I.blur, dark: I.moon, burnt: I.sun, dupes: I.copies };
+    const groups = this.cleanGroups();
+    const total = new Set(groups.flatMap((g) => g.items.map((p) => p.id))).size;
+    const mb = (groups.flatMap((g) => g.items).reduce((m, p, i, arr) => (arr.findIndex((x) => x.id === p.id) === i ? m + (p.size || 0) : m), 0) / 1048576);
+    return `<div class="hero" style="padding:2px 0 10px"><p class="brand num" style="font-size:40px">${nf.format(total)}</p>
+        <p class="sub num">${total ? `fotos para revisar · cerca de ${nf.format(Math.round(mb))} MB` : 'Nada para borrar por ahora'}</p></div>
+      ${this.state.scan && this.state.scan.phase === 'index' ? '<p class="note small" style="text-align:center;margin-bottom:10px">Todavía estoy ordenando fotos: la lista va a crecer.</p>' : ''}
+      ${groups.map((g) => `<button class="clean" data-a="clean-open" data-v="${g.k}" ${g.items.length ? '' : 'disabled'}>
+        <span class="ic">${icons[g.k]}</span>
+        <span class="tx"><span class="t">${esc(g.l)}</span><span class="s">${esc(g.d)}</span></span>
+        <span class="strip">${g.items.slice(0, 3).map((p) => `<img alt="" src="${this.url(p.thumb)}">`).join('')}</span>
+        <span class="n num">${g.k === 'dupes' && !this.state.dupes ? '…' : nf.format(g.items.length)}</span></button>`).join('')}
+      <p class="note small" style="text-align:center;margin-top:14px">Nada se borra sin que lo confirmes. Revisá cada grupo antes.</p>`;
+  }
+
+  computeDupes() {
+    this.dupesBusy = true;
+    sc.ensureHashes().then(async (n) => {
+      if (n) this.data = await sc.snapshot();
+      this.state.dupes = sc.findDuplicates(this.data.visible);
+      this.dupesBusy = false;
+      if (this.state.open && (this.state.tab === 'clean' || this.state.filter === 'dupes') && !this.typingIn()) this.render();
+    }).catch(() => { this.dupesBusy = false; });
+  }
+
+  viewClean(k) {
+    const g = this.cleanGroups().find((x) => x.k === k);
+    if (!g) { this.state.view = null; return this.tab_clean(); }
+    const sel = this.state.cleanSel;
+    const items = g.items;
+    const srcs = new Map(this.data.sources.map((s) => [s.id, s]));
+    const deletable = items.filter((p) => sel.has(p.id) && sc.canDeleteHere(srcs.get(p.sourceId))).length;
+    const n = items.filter((p) => sel.has(p.id)).length;
+    return `<div class="hero" style="padding-bottom:8px">
+        <button class="iconbtn back" data-a="back" aria-label="Volver">${I.back}</button>
+        <p class="brand" style="font-size:24px;margin-top:6px">${esc(g.l)}</p>
+        <p class="sub">${esc(g.d)}</p></div>
+      <div class="row" style="margin-bottom:10px"><button class="btn ghost" data-a="clean-all" data-v="${k}">${n === items.length ? 'Quitar todas' : 'Elegir todas'}</button></div>
+      <p class="note small" style="margin:0 2px 8px">Tocá una foto para sacarla o ponerla en la lista. Mantené apretado para verla grande.</p>
+      <div class="photos">${items.map((p) => `<button class="ph pick ${sel.has(p.id) ? 'on' : ''}" data-a="clean-toggle" data-v="${p.id}" aria-pressed="${sel.has(p.id)}" aria-label="${esc(p.name)}">
+        <img loading="lazy" decoding="async" alt="" src="${this.url(p.thumb)}"><span class="mark">${sel.has(p.id) ? I.check : ''}</span></button>`).join('')}</div>
+      <div class="selbar"><span class="n num">${plural(n, 'elegida', 'elegidas')}</span>
+        <button class="btn ghost" data-a="clean-hide" ${n ? '' : 'disabled'}>${I.lock}Bóveda</button>
+        <button class="btn danger-fill" data-a="clean-delete" ${deletable ? '' : 'disabled'}>${I.trash}Borrar ${deletable ? nf.format(deletable) : ''}</button></div>
+      ${n && !deletable ? '<p class="note small" style="margin-top:20px">En esta vista no se pueden borrar archivos. Usá la app instalada, o mandalas a la bóveda.</p>' : ''}`;
+  }
+
+  async cleanDelete() {
+    const g = this.cleanGroups().find((x) => x.k === this.state.view.cat);
+    const srcs = new Map(this.data.sources.map((s) => [s.id, s]));
+    const list = g.items.filter((p) => this.state.cleanSel.has(p.id) && sc.canDeleteHere(srcs.get(p.sourceId)));
+    if (!list.length) return;
+    const mb = list.reduce((m, p) => m + (p.size || 0), 0) / 1048576;
+    if (!(await this.confirm(`¿Borrar ${plural(list.length, 'foto', 'fotos')}?`, `Se borran del teléfono y liberás cerca de ${nf.format(Math.round(mb))} MB. No se puede deshacer.`, 'Borrar', true))) return;
+    const onP = (d, t) => { this.state.scan = { phase: 'scan', label: 'Borrando', source: g.l, done: d, total: t, noStop: true }; this.renderProgress(); };
+    try {
+      const r = await sc.deletePhotos(list, onP);
+      this.state.cleanSel.clear();
+      this.toast(r.failed ? `${plural(r.deleted, 'foto borrada', 'fotos borradas')} · ${r.failed} no se pudieron (volvé a elegir la carpeta)` : `${plural(r.deleted, 'foto borrada', 'fotos borradas')}`);
+    } finally { this.state.scan = null; this.renderProgress(); }
+    this.state.dupes = null;
+    await this.refresh();
   }
 
   /* ---------- Carpetas ---------- */
@@ -568,6 +699,9 @@ class Pompa {
     return `
       <p class="eyebrow">Apariencia</p>
       <div class="group"><div class="item stack"><div class="tx"><p class="t">Tema</p></div>${seg(THEMES, this.settings.theme, 'theme')}</div></div>
+      <p class="eyebrow">Ventana</p>
+      <div class="group"><div class="item stack"><div class="tx"><p class="t">Tamaño de la ventana</p><p class="s">También podés arrastrar la barrita de abajo de la ventana.</p></div>
+        ${seg(WINS, this.winKey(), 'win')}</div></div>
       <p class="eyebrow">Burbuja flotante</p>
       <div class="group">
         <div class="item stack"><div class="tx"><p class="t">Tamaño</p><p class="s">Movela a donde quieras: se queda donde la soltás.</p></div>${seg(SIZES.map((s) => ({ k: s.k, l: `${s.l} · ${s.px}` })), this.settings.size, 'size')}</div>
@@ -588,6 +722,11 @@ class Pompa {
           <button class="chip" data-a="wipe">Borrar</button></div>
       </div>
       <p class="note small" style="text-align:center;margin-top:18px">Pompa ${VERSION} · hecho para quedarse en tu teléfono</p>`;
+  }
+
+  winKey() {
+    const w = this.settings.win; if (!w) return 'normal';
+    const o = WINS.find((x) => Math.abs(x.w - w.w) < 2 && Math.abs(x.h - w.h) < 2); return o ? o.k : '';
   }
 
   overlayItem() {
@@ -670,6 +809,12 @@ class Pompa {
         case 'export-one': return this.export(this.data.people.filter((p) => p.id === v));
         case 'export-together': return this.export([{ name: 'Juntos', items: this.ctxList || [] }]);
         case 'filter': S.filter = v; S.limit = PAGE; return this.render();
+        case 'clean-open': { const g = this.cleanGroups().find((x) => x.k === v); S.cleanSel = new Set(g.items.map((p) => p.id)); S.view = { type: 'clean', cat: v }; this.$('.body').scrollTop = 0; return this.render(); }
+        case 'clean-toggle': vibrate(4); if (S.cleanSel.has(v)) S.cleanSel.delete(v); else S.cleanSel.add(v); return this.render();
+        case 'clean-all': { const g = this.cleanGroups().find((x) => x.k === v); const all = g.items.every((p) => S.cleanSel.has(p.id)); S.cleanSel = all ? new Set() : new Set(g.items.map((p) => p.id)); return this.render(); }
+        case 'clean-hide': { const ids = [...S.cleanSel]; for (const id of ids) await sc.setPhotoHidden(id, true); S.cleanSel.clear(); this.toast(`${plural(ids.length, 'foto', 'fotos')} en la bóveda`); S.dupes = null; return this.refresh(); }
+        case 'clean-delete': return this.cleanDelete();
+        case 'win': { const o = WINS.find((x) => x.k === v); this.settings.win = { w: o.w, h: o.h }; await db.setSetting('win', this.settings.win); this.placeSheet(); return this.render(); }
         case 'more': S.limit += PAGE; return this.render();
         case 'dupes-all': return this.hideDupes(S.dupes || []);
         case 'dupes-one': return this.hideDupes([(S.dupes || [])[Number(v)]].filter(Boolean));
@@ -693,7 +838,7 @@ class Pompa {
         }
         case 'regroup': return this.regroup();
         case 'wipe':
-          if (!(await this.confirm('¿Borrar todo?', 'Se borran carpetas, caras, nombres y la bóveda de Pompa. Tus fotos originales quedan intactas.', 'Borrar'))) return;
+          if (!(await this.confirm('¿Borrar todo?', 'Se borran carpetas, caras, nombres y la bóveda de Pompa. Tus fotos originales quedan intactas.', 'Borrar', true))) return;
           await db.clearAll(); this.settings.pinHash = ''; S.view = null; S.vaultOpen = false; this.toast('Índice borrado'); return this.refresh();
         default:
       }
@@ -733,10 +878,12 @@ class Pompa {
         sourceIds: ids, signal: this.abort.signal,
         onProgress: (p) => {
           this.state.scan = p; this.setRing(p.total ? p.done / p.total : 0); this.renderProgress();
+          if (p.phase === 'indexed') { last = Date.now(); this.state.dupes = null; this.liveRefresh(); if (p.pending) this.toast(`Fotos ordenadas · ahora busco caras en ${nf.format(p.pending)}`); return; }
           if (Date.now() - last > 2500) { last = Date.now(); this.liveRefresh(); }
         },
       });
-      const msg = r.aborted ? 'Escaneo en pausa' : `${plural(r.scanned, 'foto nueva', 'fotos nuevas')} · ${plural(r.faces, 'cara', 'caras')}`;
+      const extra = r.docs ? ` · ${plural(r.docs, 'papel', 'papeles')}` : '';
+      const msg = r.aborted ? 'Escaneo en pausa · seguí cuando quieras' : `${plural(r.scanned, 'foto nueva', 'fotos nuevas')} · ${plural(r.faces, 'cara', 'caras')}${extra}`;
       this.toast(r.blocked.length ? `${msg} · sin acceso: ${r.blocked.join(', ')}` : r.unsupported ? `${msg} · ${r.unsupported} sin formato compatible` : msg);
     } catch (err) {
       console.error('[rostra] escaneo', err);
@@ -789,7 +936,7 @@ class Pompa {
     const n = list.reduce((s, p) => s + p.items.length, 0);
     const fsa = sc.supportsFSA(); const pick = fsa || NATIVE;
     if (!(await this.confirm('Armar carpetas', `Una carpeta por persona: ${plural(list.length, 'carpeta', 'carpetas')}, ${plural(n, 'foto', 'fotos')}. ${pick ? 'Elegí dónde crearlas.' : 'Se descarga un .zip.'} Se copian: los originales no se mueven ni se borran.`, pick ? 'Elegir destino' : 'Descargar .zip'))) return;
-    const onP = (d, t) => { this.state.scan = { phase: 'scan', label: 'Copiando', source: 'Armando carpetas', done: d, total: t }; this.renderProgress(); this.setRing(d / t); };
+    const onP = (d, t) => { this.state.scan = { phase: 'scan', label: 'Copiando', source: 'Armando carpetas', done: d, total: t, noStop: true }; this.renderProgress(); this.setRing(d / t); };
     try {
       const r = NATIVE ? await exportToNative(list, onP) : fsa ? await exportToFolder(list, onP) : await exportToZip(list, onP);
       if (r.cancelled) return this.toast('No se eligió destino');
@@ -927,11 +1074,11 @@ class Pompa {
   }
 
   /* ---------- Diálogos ---------- */
-  confirm(title, text, ok) {
+  confirm(title, text, ok, danger = false) {
     return new Promise((resolve) => {
       const d = document.createElement('div'); d.className = 'dialog';
       d.innerHTML = `<div class="card" role="alertdialog" aria-label="${esc(title)}"><h3>${esc(title)}</h3><p class="note">${esc(text)}</p>
-        <div class="row"><button class="btn ghost" data-r="0">Cancelar</button><button class="btn primary" data-r="1">${esc(ok)}</button></div></div>`;
+        <div class="row"><button class="btn ghost" data-r="0">Cancelar</button><button class="btn ${danger ? 'danger-fill' : 'primary'}" data-r="1">${esc(ok)}</button></div></div>`;
       const done = (val) => { d.remove(); resolve(val); };
       d.addEventListener('dismiss', () => done(false));
       d.addEventListener('click', (e) => { const b = e.composedPath().find((n) => n.dataset?.r); if (b || e.target === d) done(b?.dataset.r === '1'); });

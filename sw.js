@@ -1,8 +1,8 @@
 // Pompa · service worker: shell + detector facial disponibles offline.
-const VERSION = 'pompa-v4';
+const VERSION = 'pompa-v5';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './icons/icon.svg', './icons/icon-maskable.svg',
-  './src/widget.js', './src/styles.js', './src/db.js', './src/scanner.js', './src/exporter.js', './src/analyze-worker.js',
+  './src/widget.js', './src/styles.js', './src/db.js', './src/scanner.js', './src/exporter.js', './src/analyze-worker.js', './src/quality.js',
 ];
 // Los modelos (~7 MB) se cachean recién cuando el usuario escanea por primera vez.
 const LAZY = /\/vendor\//;

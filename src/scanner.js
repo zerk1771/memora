@@ -1,5 +1,6 @@
 // Memora · carpetas elegidas por el usuario, detección facial on-device y agrupado por persona.
 import * as db from './db.js';
+import { measure, classify } from './quality.js';
 
 const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|avif)$/i;
 const DETECT_MAX = 960;   // lado máximo usado para detectar (ahorra memoria en móvil)
@@ -209,36 +210,47 @@ function workerAnalyzer() {
     w.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); if (e.data.ok) p.resolve(e.data); else p.reject(new Error(e.data.error)); };
     w.onerror = (e) => { e.preventDefault?.(); fail(new Error(e.message || 'worker')); };
     const call = (msg) => new Promise((res, rej) => { const id = ++seq; pending.set(id, { resolve: res, reject: rej }); w.postMessage({ ...msg, id }); });
-    const timer = setTimeout(() => { fail(new Error('el worker no respondió')); w.terminate(); }, 120000);
-    call({ type: 'setup' }).then(() => {
+    const timer = setTimeout(() => { fail(new Error('el worker no respondió')); w.terminate(); }, 30000);
+    call({ type: 'ping' }).then(() => {
       clearTimeout(timer);
-      resolve({ mode: 'worker', analyze: async (file) => (await call({ type: 'analyze', file })).out });
+      resolve({
+        mode: 'worker',
+        index: async (file) => (await call({ type: 'index', file })).out,
+        faces: async (file) => (await call({ type: 'faces', file })).out,
+      });
     }, (err) => { clearTimeout(timer); w.terminate(); reject(err); });
   });
 }
 
-async function mainAnalyzer() {
-  await loadModels();
-  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
+function mainAnalyzer() {
   return {
     mode: 'main',
-    analyze: async (file) => {
+    index: async (file) => {
       let bitmap;
       try { bitmap = await createImageBitmap(file); } catch { throw new Error('unsupported'); }
       const origW = bitmap.width; const origH = bitmap.height;
-      const { canvas, scale } = canvasFrom(bitmap, DETECT_MAX);
       const thumbCanvas = canvasFrom(bitmap, THUMB_MAX).canvas;
-      const thumb = await toBlob(thumbCanvas);
-      const hash = dhash(thumbCanvas);
+      const small = canvasFrom(bitmap, 384).canvas;
       bitmap.close?.();
-      const results = await faceapi.detectAllFaces(canvas, opts).withFaceLandmarks(true).withFaceDescriptors();
+      const d = small.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, small.width, small.height).data;
+      const q = measure(d, small.width, small.height);
+      return { thumb: await toBlob(thumbCanvas), hash: dhash(thumbCanvas), origW, origH, q, kind: classify(file.name, q) };
+    },
+    faces: async (file) => {
+      await loadModels();
+      let bitmap;
+      try { bitmap = await createImageBitmap(file); } catch { throw new Error('unsupported'); }
+      const { canvas, scale } = canvasFrom(bitmap, DETECT_MAX);
+      bitmap.close?.();
+      const results = await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 }))
+        .withFaceLandmarks(true).withFaceDescriptors();
       const faces = [];
       for (const r of results) {
         const box = r.detection.box;
         if (box.width < 24 || box.height < 24) continue;
         faces.push({ descriptor: Array.from(r.descriptor), box: { x: box.x / scale, y: box.y / scale, w: box.width / scale, h: box.height / scale }, thumb: await faceThumb(canvas, box) });
       }
-      return { thumb, hash, origW, origH, faces };
+      return { faces };
     },
   };
 }
@@ -249,90 +261,159 @@ export function getAnalyzer() {
       console.warn('[pompa] sin segundo plano, analizo en el hilo principal:', err?.message || err);
       return mainAnalyzer();
     });
-    analyzerPromise.catch(() => { analyzerPromise = null; });
   }
   return analyzerPromise;
 }
 
-/* ---------- Escaneo ---------- */
+/* ---------- Escaneo en dos pasadas ---------- */
+
+// Ya pasó por la búsqueda de caras (los índices viejos no tienen facesDone pero sí faceCount).
+export const facesDone = (p) => p.facesDone === true || (p.facesDone === undefined && typeof p.faceCount === 'number');
+// Papeles y capturas no se analizan en busca de caras: ahorra mucho tiempo.
+const wantsFaces = (p) => (p.kind || 'photo') === 'photo';
 
 export async function scan({ sourceIds = null, onProgress = () => {}, signal } = {}) {
   const threshold = await db.getSetting('threshold', DEFAULT_THRESHOLD);
   const sources = (await db.all('sources')).filter((s) => s.enabled && (!sourceIds || sourceIds.includes(s.id)));
   const persons = new Map((await db.all('persons')).map((p) => [p.id, p]));
-  const report = { scanned: 0, skipped: 0, faces: 0, unsupported: 0, blocked: [] };
-
-  onProgress({ phase: 'models', done: 0, total: 0 });
+  const report = { scanned: 0, skipped: 0, faces: 0, unsupported: 0, blocked: [], docs: 0, shots: 0 };
   const analyzer = await getAnalyzer();
+  const queue = []; // fotos que esperan la búsqueda de caras
 
+  // Pasada 1: ordenar todas las fotos (rápido). La galería ya se puede usar al terminar.
   for (const src of sources) {
     if ((await sourceAccess(src)) !== 'granted') { report.blocked.push(src.name); continue; }
     let files;
     try { files = await listFiles(src); } catch { report.blocked.push(src.name); continue; }
-
     const known = new Map((await db.byIndex('photos', 'sourceId', src.id)).map((p) => [p.id, p]));
     const seen = new Set();
     let done = 0;
-
     for (const f of files) {
       if (signal?.aborted) return { ...report, aborted: true };
       const id = `${src.id}:${f.path}`;
       seen.add(id);
-      onProgress({ phase: 'scan', source: src.name, done: done++, total: files.length });
+      onProgress({ phase: 'index', label: 'Ordenando fotos', source: src.name, done: done++, total: files.length });
       let file;
       try { file = await f.getFile(); } catch { continue; }
       const prev = known.get(id);
-      if (prev && prev.size === file.size && prev.lastModified === file.lastModified) { report.skipped++; continue; }
-      if (prev) await dropPhotoFaces(id, persons);
-
-      // El análisis pesado corre en segundo plano (Web Worker); acá sólo se agrupa y se guarda.
+      const same = prev && prev.size === file.size && prev.lastModified === file.lastModified;
+      if (same && prev.q) {
+        report.skipped++;
+        if (!facesDone(prev) && wantsFaces(prev) && !prev.hidden) queue.push({ f, id, src });
+        continue;
+      }
+      if (prev && !same) await dropPhotoFaces(id, persons);
       let a;
-      try { a = await analyzer.analyze(file); } catch (e) {
-        if (e?.message === 'unsupported') { report.unsupported++; continue; }
-        console.warn('[pompa] análisis falló', f.path, e); report.unsupported++; continue;
+      try { a = await analyzer.index(file); } catch (e) {
+        if (e?.message !== 'unsupported') console.warn('[pompa] no se pudo ordenar', f.path, e);
+        report.unsupported++; continue;
       }
-      const { thumb, hash, origW, origH } = a;
-
-      const faces = [];
-      for (const r of a.faces) {
-        const descriptor = r.descriptor;
-        let best = null; let bestD = Infinity;
-        for (const p of persons.values()) {
-          if (!p.centroid) continue;
-          const d = dist(descriptor, p.centroid);
-          if (d < bestD) { bestD = d; best = p; }
-        }
-        const faceId = db.uid('face');
-        if (!best || bestD > threshold) {
-          best = { id: db.uid('per'), name: '', hidden: false, centroid: descriptor, count: 0, coverFaceId: faceId, createdAt: Date.now() };
-          persons.set(best.id, best);
-        }
-        best.centroid = best.centroid.map((v, i) => (v * best.count + descriptor[i]) / (best.count + 1));
-        best.count += 1;
-        faces.push({ id: faceId, photoId: id, personId: best.id, descriptor, box: r.box, thumb: r.thumb });
-      }
-      await db.put('photos', {
+      const keepFaces = same && facesDone(prev);
+      const photo = {
+        ...(keepFaces ? prev : {}),
         id, sourceId: src.id, path: f.path, name: file.name, size: file.size, lastModified: file.lastModified,
-        thumb, hash, origW, origH, faceCount: faces.length, hidden: prev?.hidden || false, fav: prev?.fav || false, scannedAt: Date.now(),
-      });
-      await db.putMany('faces', faces);
-      await db.putMany('persons', [...new Set(faces.map((x) => x.personId))].map((pid) => persons.get(pid)));
-      report.scanned++; report.faces += faces.length;
-      await new Promise((r) => setTimeout(r, 0)); // deja respirar la UI entre foto y foto
+        thumb: a.thumb, hash: a.hash, origW: a.origW, origH: a.origH, q: a.q, kind: a.kind,
+        faceCount: keepFaces ? prev.faceCount : 0, facesDone: keepFaces || !wantsFaces(a),
+        hidden: prev?.hidden || false, fav: prev?.fav || false, scannedAt: Date.now(),
+      };
+      await db.put('photos', photo);
+      if (a.kind === 'doc') report.docs++;
+      if (a.kind === 'screenshot') report.shots++;
+      if (!photo.facesDone) queue.push({ f, id, src });
+      report.scanned++;
+      await new Promise((r) => setTimeout(r, 0));
     }
-
     // Fotos borradas del disco: se limpian del índice (no se toca el archivo original).
     const gone = [...known.keys()].filter((k) => !seen.has(k));
     for (const k of gone) await dropPhotoFaces(k, persons);
     await db.delMany('photos', gone);
     src.photoCount = seen.size; src.lastScan = Date.now();
     await db.put('sources', src);
-    onProgress({ phase: 'scan', source: src.name, done: files.length, total: files.length });
+  }
+  onProgress({ phase: 'indexed', label: 'Fotos ordenadas', source: '', done: 1, total: 1, pending: queue.length });
+
+  // Pasada 2: buscar caras sólo en las fotos que lo necesitan.
+  let i = 0;
+  for (const { f, id, src } of queue) {
+    if (signal?.aborted) { await recount(); return { ...report, aborted: true }; }
+    onProgress({ phase: 'faces', label: 'Buscando caras', source: src.name, done: i++, total: queue.length });
+    let file; let r;
+    try { file = await f.getFile(); r = await analyzer.faces(file); } catch (e) {
+      if (e?.message !== 'unsupported') console.warn('[pompa] caras falló', f.path, e);
+      continue;
+    }
+    const photo = await db.get('photos', id); if (!photo) continue;
+    const faces = [];
+    for (const fc of r.faces) {
+      const descriptor = fc.descriptor;
+      let best = null; let bestD = Infinity;
+      for (const p of persons.values()) {
+        if (!p.centroid) continue;
+        const d = dist(descriptor, p.centroid);
+        if (d < bestD) { bestD = d; best = p; }
+      }
+      const faceId = db.uid('face');
+      if (!best || bestD > threshold) {
+        best = { id: db.uid('per'), name: '', hidden: false, centroid: descriptor, count: 0, coverFaceId: faceId, createdAt: Date.now() };
+        persons.set(best.id, best);
+      }
+      best.centroid = best.centroid.map((v, k) => (v * best.count + descriptor[k]) / (best.count + 1));
+      best.count += 1;
+      faces.push({ id: faceId, photoId: id, personId: best.id, descriptor, box: fc.box, thumb: fc.thumb });
+    }
+    photo.faceCount = faces.length; photo.facesDone = true;
+    await db.put('photos', photo);
+    await db.putMany('faces', faces);
+    await db.putMany('persons', [...new Set(faces.map((x) => x.personId))].map((pid) => persons.get(pid)));
+    report.faces += faces.length;
+    await new Promise((res) => setTimeout(res, 0));
   }
   await recount();
   onProgress({ phase: 'done', done: 1, total: 1 });
   return report;
 }
+
+/* ---------- Borrar del dispositivo (con confirmación del usuario) ---------- */
+
+// Devuelve { deleted, failed, cantHere }. cantHere = carpetas donde este navegador no permite borrar.
+export async function deletePhotos(photos, onProgress = () => {}) {
+  const out = { deleted: 0, failed: 0, cantHere: 0 };
+  const sources = new Map((await db.all('sources')).map((s) => [s.id, s]));
+  const granted = new Set();
+  let i = 0;
+  for (const p of photos) {
+    onProgress(++i, photos.length);
+    const src = sources.get(p.sourceId);
+    let ok = false;
+    try {
+      if (src?.kind === 'fsa' && src.handle) {
+        if (!granted.has(src.id)) {
+          const perm = await src.handle.requestPermission({ mode: 'readwrite' });
+          if (perm !== 'granted') { out.failed++; continue; }
+          granted.add(src.id);
+        }
+        const parts = p.path.split('/');
+        let dir = src.handle;
+        for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
+        await dir.removeEntry(parts.at(-1));
+        ok = true;
+      } else if (src?.kind === 'input' && typeof window.MemoraNative !== 'undefined') {
+        ok = !!window.MemoraNative.deleteFile(src.name, p.name);
+      } else { out.cantHere++; continue; }
+    } catch (e) { console.warn('[pompa] no se pudo borrar', p.path, e); ok = false; }
+    if (!ok) { out.failed++; continue; }
+    await dropPhotoFaces(p.id);
+    await db.del('photos', p.id);
+    sessionFiles.get(p.sourceId)?.delete(p.path);
+    if (src) { src.photoCount = Math.max(0, (src.photoCount || 1) - 1); }
+    out.deleted++;
+  }
+  for (const s of sources.values()) await db.put('sources', s);
+  await recount();
+  return out;
+}
+
+export const canDeleteHere = (src) => (src?.kind === 'fsa') || (src?.kind === 'input' && typeof window.MemoraNative !== 'undefined');
 
 async function dropPhotoFaces(photoId, personsMap) {
   const faces = await db.byIndex('faces', 'photoId', photoId);
@@ -479,6 +560,7 @@ export async function snapshot() {
     .sort((a, b) => (!!b.name - !!a.name) || b.visibleCount - a.visibleCount);
   const inScope = photos.filter((p) => enabled.has(p.sourceId));
   const visible = inScope.filter((p) => !p.hidden).sort((a, b) => b.lastModified - a.lastModified);
-  const noFaces = visible.filter((p) => p.faceCount === 0);
-  return { sources, photos, visible, people, noFaces, hiddenPhotos: inScope.filter((p) => p.hidden) };
+  const noFaces = visible.filter((p) => facesDone(p) && p.faceCount === 0 && (p.kind || 'photo') === 'photo');
+  const pendingFaces = inScope.filter((p) => !facesDone(p) && (p.kind || 'photo') === 'photo').length;
+  return { sources, photos, visible, people, noFaces, pendingFaces, hiddenPhotos: inScope.filter((p) => p.hidden) };
 }
