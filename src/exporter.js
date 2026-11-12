@@ -60,3 +60,29 @@ export async function exportToZip(people, onProgress = () => {}) {
   setTimeout(() => URL.revokeObjectURL(a.href), 30000);
   return { done, missing };
 }
+
+// APK de Android: el puente nativo crea carpetas reales en el destino elegido (Storage Access Framework).
+const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(',')[1] || '');
+  r.onerror = () => reject(r.error);
+  r.readAsDataURL(blob);
+});
+
+export async function exportToNative(people, onProgress = () => {}) {
+  const M = window.MemoraNative;
+  const ok = await new Promise((resolve) => { window.__memoraNativeDest = resolve; M.pickExportDir(); });
+  window.__memoraNativeDest = null;
+  if (!ok) return { done: 0, missing: [], cancelled: true };
+  const total = people.reduce((n, p) => n + p.items.length, 0);
+  let done = 0; const missing = [];
+  for (const [i, person] of people.entries()) {
+    const folder = folderName(person, i);
+    for (const { photo } of person.items) {
+      const file = await getOriginal(photo);
+      if (!file || !M.saveFile(folder, safe(photo.name), file.type || 'image/jpeg', await blobToBase64(file))) missing.push(photo.path);
+      onProgress(++done, total);
+    }
+  }
+  return { done: done - missing.length, missing };
+}

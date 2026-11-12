@@ -34,7 +34,7 @@
   <script type="module">
     import { mountMemora } from './src/widget.js';
     mountMemora();
-    if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js');
+    if ('serviceWorker' in navigator && location.protocol !== 'file:' && !window.MemoraNative) navigator.serviceWorker.register('./sw.js');
   </script>
 </body>
 </html>

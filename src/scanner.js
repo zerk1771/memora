@@ -31,7 +31,9 @@ export async function addSourceFromFiles(fileList) {
   const files = [...fileList].filter((f) => IMG_RE.test(f.name));
   const first = fileList[0];
   const rel = (first && first.webkitRelativePath) || '';
-  const name = rel.split('/')[0] || 'Carpeta';
+  let nativeName = '';
+  try { nativeName = window.MemoraNative?.lastFolderName?.() || ''; } catch { /* sin puente */ }
+  const name = rel.split('/')[0] || nativeName || 'Carpeta';
   const sources = await db.all('sources');
   let src = sources.find((s) => s.kind === 'input' && s.name === name);
   if (!src) {

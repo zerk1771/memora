@@ -53,3 +53,14 @@ python3 -m http.server 8080   # y abrir http://localhost:8080
 - **Android/iOS:** el selector de carpeta (`webkitdirectory`) da acceso sólo durante la sesión. Las caras, nombres y miniaturas quedan guardados, pero para reescanear o exportar originales hay que volver a elegir la carpeta. En Chrome de escritorio el acceso se recuerda (pide confirmar con un toque).
 - **HEIC** (fotos de iPhone) no se puede decodificar en la mayoría de los navegadores: se cuentan como “sin formato compatible”.
 - El primer escaneo descarga ~7 MB de modelos (después quedan en caché). Sin GPU (WebGL) cae a CPU y es más lento.
+
+## App de Android (APK)
+
+`android/` tiene un contenedor nativo mínimo (sin Gradle) que:
+
+- carga la galería desde el propio APK (funciona sin internet);
+- usa el selector de carpetas del sistema y recorre subcarpetas;
+- **Armar carpetas** crea carpetas reales por persona en el destino que elijas;
+- **Burbuja sobre otras apps** (Ajustes): al salir de Memora queda una burbuja de 30 dp flotando encima de cualquier app. Pide el permiso “Mostrar sobre otras apps” y muestra una notificación fija mientras está activa (Android lo exige).
+
+Compilar: ver `android/build-apk.sh`. La clave de firma no se guarda en el repo.

@@ -2,7 +2,9 @@
 import { CSS } from './styles.js';
 import * as db from './db.js';
 import * as sc from './scanner.js';
-import { exportToFolder, exportToZip } from './exporter.js';
+import { exportToFolder, exportToZip, exportToNative } from './exporter.js';
+
+const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
 
 const I = {
   face: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="9" cy="10" r=".6" fill="currentColor"/><circle cx="15" cy="10" r=".6" fill="currentColor"/><path d="M9 15c1.6 1.4 4.4 1.4 6 0"/></svg>',
@@ -291,6 +293,7 @@ class Memora {
     return `
       <div class="setting"><p class="t">Tamaño de la burbuja</p><p class="note small">Arrastrala a cualquier borde; se queda donde la dejes.</p>
         <div class="seg">${SIZES.map((s) => `<button aria-pressed="${s.k === this.settings.size}" data-a="size" data-v="${s.k}"><i style="width:${Math.round(s.px / 2.6)}px;height:${Math.round(s.px / 2.6)}px"></i>${s.l} · ${s.px}px</button>`).join('')}</div></div>
+      ${NATIVE ? this.overlaySetting() : ''}
       <div class="setting"><p class="t">Cómo agrupa las caras</p>
         <p class="note small">Más estricto separa más; más flexible junta más (y puede mezclar parecidos).</p>
         <input type="range" min="0.38" max="0.62" step="0.02" value="${t}" data-a="threshold" aria-label="Sensibilidad de agrupado">
@@ -300,6 +303,18 @@ class Memora {
         <p class="note small">La detección corre en este dispositivo. Las miniaturas y huellas faciales se guardan sólo en este navegador. No hay servidor.</p>
         <button class="btn danger block" style="margin-top:10px" data-a="wipe">${I.trash}Borrar todo el índice</button></div>`;
   }
+
+  overlaySetting() {
+    let on = false; let can = false;
+    try { on = window.MemoraNative.overlayEnabled(); can = window.MemoraNative.canOverlay(); } catch { /* sin puente */ }
+    const active = on && can;
+    return `<div class="setting" style="display:flex;align-items:center;gap:12px">
+        <div style="flex:1;min-width:0"><p class="t">Burbuja sobre otras apps</p>
+        <p class="note small">${on && !can ? 'Falta el permiso “Mostrar sobre otras apps”. Tocá el interruptor para darlo.' : 'Cuando salís de Memora, la burbuja queda flotando encima de cualquier app.'}</p></div>
+        <button class="switch" role="switch" aria-checked="${active}" aria-label="Burbuja sobre otras apps" data-a="overlay"></button></div>`;
+  }
+
+  onNativeResume() { if (this.state.open && this.state.tab === 'settings' && !this.state.view) this.render(); }
 
   /* ---------- Eventos ---------- */
   async onChange(e) {
@@ -353,7 +368,15 @@ class Memora {
         case 'view': return this.openViewer(v, el.dataset.f);
         case 'export-all': return this.export(this.data.people.filter((p) => !p.hidden));
         case 'export-one': return this.export(this.data.people.filter((p) => p.id === v));
-        case 'size': this.settings.size = v; await db.setSetting('bubbleSize', v); this.applySize(); return this.render();
+        case 'size': this.settings.size = v; await db.setSetting('bubbleSize', v); this.applySize();
+          if (NATIVE) try { window.MemoraNative.setBubbleSize((SIZES.find((x) => x.k === v) || SIZES[1]).px); } catch { /* sin puente */ }
+          return this.render();
+        case 'overlay': {
+          const M = window.MemoraNative; const active = M.overlayEnabled() && M.canOverlay();
+          if (active) { M.setOverlay(false); this.toast('Burbuja sólo dentro de Memora'); }
+          else { M.setOverlay(true); this.toast(M.canOverlay() ? 'Listo: salí de Memora y la vas a ver flotando' : 'Activá “Mostrar sobre otras apps” y volvé'); }
+          return this.render();
+        }
         case 'regroup': return this.regroup();
         case 'wipe':
           if (!(await this.confirm('¿Borrar todo el índice?', 'Se borran carpetas elegidas, caras, nombres y ocultos de Memora. Tus fotos originales quedan intactas.', 'Borrar'))) return;
@@ -439,10 +462,12 @@ class Memora {
     if (sc.isEmbedded) return this.toast('Armar carpetas funciona con la app instalada, no en la vista previa');
     const n = list.reduce((s, p) => s + p.items.length, 0);
     const fsa = sc.supportsFSA();
-    if (!(await this.confirm('Acomodar en carpetas', `Se crea una carpeta por persona (${plural(list.length, 'carpeta', 'carpetas')}, ${plural(n, 'foto', 'fotos')}). ${fsa ? 'Elegí dónde crearlas.' : 'Se descarga un .zip.'} Se copian: los originales no se mueven ni se borran.`, fsa ? 'Elegir destino' : 'Descargar .zip'))) return;
+    const pick = fsa || NATIVE;
+    if (!(await this.confirm('Acomodar en carpetas', `Se crea una carpeta por persona (${plural(list.length, 'carpeta', 'carpetas')}, ${plural(n, 'foto', 'fotos')}). ${pick ? 'Elegí dónde crearlas.' : 'Se descarga un .zip.'} Se copian: los originales no se mueven ni se borran.`, pick ? 'Elegir destino' : 'Descargar .zip'))) return;
     const onP = (d, t) => { this.state.scan = { phase: 'scan', source: 'Copiando fotos', done: d, total: t }; this.renderProgress(); this.setRing(d / t); };
     try {
-      const r = fsa ? await exportToFolder(list, onP) : await exportToZip(list, onP);
+      const r = NATIVE ? await exportToNative(list, onP) : fsa ? await exportToFolder(list, onP) : await exportToZip(list, onP);
+      if (r.cancelled) return this.toast('No se eligió destino');
       this.toast(r.missing.length ? `Listo · ${r.missing.length} sin original (volvé a dar acceso a la carpeta)` : `Listo · ${plural(r.done, 'foto copiada', 'fotos copiadas')}`);
     } finally { this.state.scan = null; this.setRing(null); this.renderProgress(); }
   }
