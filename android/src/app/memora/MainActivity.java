@@ -162,6 +162,7 @@ public class MainActivity extends Activity {
             }
             lastFolder = folderName(tree);
             final String folder = lastFolder;
+            web.evaluateJavascript("window.__memora && window.__memora.pickingFolder && window.__memora.pickingFolder()", null);
             new Thread(new Runnable() {
                 public void run() {
                     final List<Uri> out = new ArrayList<>();

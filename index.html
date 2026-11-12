@@ -10,10 +10,10 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="preload" href="vendor/fonts/manrope.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="vendor/fonts/instrument-serif-italic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="vendor/fonts/jakarta.woff2" as="font" type="font/woff2" crossorigin>
   <style>
     @font-face{font-family:"Rostra Sans";src:url("vendor/fonts/manrope.woff2") format("woff2");font-weight:200 800;font-display:swap}
-    @font-face{font-family:"Rostra Serif";src:url("vendor/fonts/instrument-serif-italic.woff2") format("woff2");font-style:italic;font-display:swap}
+    @font-face{font-family:"Pompa Display";src:url("vendor/fonts/jakarta.woff2") format("woff2");font-weight:200 800;font-display:swap}
     /* Layout: portada de una columna; la app vive en la burbuja flotante. */
     :root{--bg:#0B0B0D;--text:#F3F0EA;--text-2:#B4AEA4;--muted:#7A756D;--accent:#E4C894;--line:rgba(255,255,255,.08);color-scheme:dark}
     @media (prefers-color-scheme: light){:root{--bg:#F5F3EF;--text:#17140F;--text-2:#5A544B;--muted:#8C857A;--accent:#9C7535;--line:rgba(20,16,10,.08);color-scheme:light}}
@@ -21,13 +21,13 @@
     html.native,html.native body{background:transparent} html.native main{display:none}
     main{max-width:440px;margin:0 auto;padding:calc(56px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right, 0px)) 48px max(24px, env(safe-area-inset-left, 0px))}
     .kicker{font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin:0 0 18px}
-    h1{font-family:"Rostra Serif",Georgia,serif;font-style:italic;font-weight:400;font-size:64px;line-height:.9;letter-spacing:-1px;margin:0}
+    h1{font-family:"Pompa Display",system-ui,sans-serif;font-weight:800;font-size:56px;line-height:.95;letter-spacing:-2px;margin:0}
     h1 span{color:var(--accent);font-style:normal}
     .lede{font-size:16px;line-height:1.55;color:var(--text-2);margin:20px 0 34px;max-width:34ch}
     ol{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
     li{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:16px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:1.45;color:var(--text-2)}
     li b{color:var(--text);font-weight:700}
-    li em{font-family:"Rostra Serif",Georgia,serif;font-size:20px;line-height:1;color:var(--accent)}
+    li em{font-family:"Pompa Display",system-ui,sans-serif;font-style:normal;font-weight:700;font-size:15px;line-height:1.4;color:var(--accent)}
     .foot{font-size:12px;color:var(--muted);margin-top:26px}
   </style>
 </head>

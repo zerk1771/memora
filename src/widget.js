@@ -4,9 +4,10 @@ import * as db from './db.js';
 import * as sc from './scanner.js';
 import { exportToFolder, exportToZip, exportToNative } from './exporter.js';
 import { issue } from './quality.js';
+import morphdom from '../vendor/morphdom-esm.js';
 
 const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
-const VERSION = '2.3';
+const VERSION = '2.4';
 
 const sv = (p, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${p}</svg>`;
 const I = {
@@ -77,7 +78,8 @@ class Pompa {
     this.root = this.hostEl.attachShadow({ mode: 'open' });
     this.state = { open: false, tab: 'people', view: null, selecting: false, sel: new Set(), scan: null,
       query: '', filter: 'all', limit: PAGE, cleanSel: new Set(), vaultOpen: false, pin: '', pinStep: null, pinFirst: '', dupes: null };
-    this.urls = []; this.prevUrls = [];
+    this.scanQueue = new Set();
+    this.thumbs = new Map(); // miniaturas con URL estable: no se recargan ni parpadean
     this.data = { sources: [], people: [], visible: [], noFaces: [], hiddenPhotos: [], photos: [] };
   }
 
@@ -105,7 +107,7 @@ class Pompa {
       <div class="scrim"></div>
       <section class="sheet" role="dialog" aria-modal="true" aria-label="Pompa">
         <header class="head">
-          <div class="grow"><p class="brand">Pompa<i>.</i></p><p class="stats num"></p></div>
+          <div class="grow"><p class="eyebrow-brand">Pompa<i>.</i></p><p class="brand"></p><p class="stats num"></p></div>
           <button class="iconbtn" data-a="close" aria-label="Cerrar">${I.close}</button>
         </header>
         <div class="progress" hidden></div>
@@ -201,7 +203,7 @@ class Pompa {
       vibrate(5);
       if (this.state.open) this.close(); else this.open();
     });
-    window.addEventListener('resize', () => this.placeBubble());
+    window.addEventListener('resize', () => { if (!this.minimizing && !document.hidden) this.placeBubble(); });
   }
 
   setRing(frac) {
@@ -228,7 +230,11 @@ class Pompa {
     this.state.sel.clear();
     const b = this.$('.bubble'); b.classList.remove('open'); b.setAttribute('aria-expanded', 'false');
     this.$('.scrim').classList.remove('on'); this.$('.sheet').classList.remove('on');
-    if (NATIVE) { setTimeout(() => { try { window.MemoraNative.minimize(); } catch { /* sin puente */ } }, 240); return; }
+    if (NATIVE) {
+      // Se esconde al instante: al minimizar, Android achica la ventana y la burbuja se reacomodaba ("salía corriendo").
+      setTimeout(() => { this.minimizing = true; b.style.transition = 'none'; b.style.visibility = 'hidden'; try { window.MemoraNative.minimize(); } catch { /* sin puente */ } }, 240);
+      return;
+    }
     try { if (!fromPop && history.state?.rostra) history.back(); } catch { /* vista embebida */ }
     b.focus();
   }
@@ -301,10 +307,29 @@ class Pompa {
       if (Number.isFinite(fx) && Number.isFinite(fy) && fx >= 0) { this.settings.pos = { x: fx, y: fy }; this.placeBubble(); }
     } catch { /* sin puente */ }
   }
-  onNativeResume() { this.syncNativePos(); if (!this.state.open) this.open(); else this.render(); }
+  onNativeResume() {
+    this.minimizing = false;
+    const b = this.$('.bubble');
+    this.syncNativePos();
+    b.style.visibility = ''; requestAnimationFrame(() => { b.style.transition = ''; });
+    if (!this.state.open) this.open(); else this.render();
+  }
+
+  // El APK avisa apenas elegís una carpeta, mientras la recorre.
+  pickingFolder() { this.toast('Leyendo la carpeta…'); }
 
   /* ---------- Datos ---------- */
-  url(blob) { if (!blob) return ''; const u = URL.createObjectURL(blob); this.urls.push(u); return u; }
+  // URL estable por foto/cara: la misma miniatura conserva su URL entre actualizaciones (sin parpadeo negro).
+  cachedUrl(key, blob) {
+    if (!blob) return '';
+    const hit = this.thumbs.get(key);
+    if (hit) { this.thumbs.delete(key); this.thumbs.set(key, hit); return hit; }
+    const u = URL.createObjectURL(blob); this.thumbs.set(key, u);
+    if (this.thumbs.size > 2500) { const [k, old] = this.thumbs.entries().next().value; this.thumbs.delete(k); URL.revokeObjectURL(old); }
+    return u;
+  }
+  photoUrl(p) { return p ? this.cachedUrl(`p:${p.id}:${p.scannedAt || 0}`, p.thumb) : ''; }
+  faceUrl(f) { return f ? this.cachedUrl(`f:${f.id}`, f.thumb) : ''; }
 
   async refresh() {
     this.data = await sc.snapshot();
@@ -319,9 +344,10 @@ class Pompa {
   }
 
   render() {
-    this.prevUrls.forEach((u) => URL.revokeObjectURL(u)); this.prevUrls = this.urls; this.urls = [];
     const { view, tab } = this.state;
     this.root.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.v === tab)));
+    const titles = { people: 'Personas', photos: 'Fotos', clean: 'Borrar', sources: 'Carpetas', vault: 'Bóveda', settings: 'Ajustes' };
+    this.$('.head .brand').textContent = titles[tab] || 'Pompa';
     const people = this.data.people.filter((p) => !p.hidden && p.visibleCount).length;
     this.$('.stats').textContent = this.data.visible.length
       ? `${plural(this.data.visible.length, 'foto', 'fotos')} · ${plural(people, 'persona', 'personas')}`
@@ -331,16 +357,15 @@ class Pompa {
     else if (view?.type === 'together') html = this.viewTogether(view.ids);
     else if (view?.type === 'clean') html = this.viewClean(view.cat);
     else html = this[`tab_${tab}`]();
-    // Si estabas escribiendo, el campo nuevo recupera foco, texto y cursor (el teclado no se cierra).
-    const a = this.typingIn();
-    const keep = a && { key: a.dataset.a, v: a.dataset.v || '', value: a.value, s: a.selectionStart, e: a.selectionEnd };
-    const body = this.$('.body'); const top = body.scrollTop;
-    body.innerHTML = html;
-    body.scrollTop = top;
-    if (keep) {
-      const n = [...body.querySelectorAll('input')].find((i) => i.dataset.a === keep.key && (i.dataset.v || '') === keep.v);
-      if (n) { n.value = keep.value; n.focus({ preventScroll: true }); try { n.setSelectionRange(keep.s, keep.e); } catch { /* tipo sin cursor */ } }
-    }
+    // Sólo cambia lo que cambió: las miniaturas existentes quedan intactas y el campo donde escribís no se toca.
+    const body = this.$('.body');
+    const next = document.createElement('div'); next.innerHTML = html;
+    const active = this.root.activeElement;
+    morphdom(body, next, {
+      childrenOnly: true,
+      getNodeKey: (n) => (n.nodeType === 1 && (n.dataset?.key || n.id)) || null,
+      onBeforeElUpdated: (from, to) => !(from === active && from.tagName === 'INPUT') && !from.isEqualNode(to),
+    });
     this.pendingRender = false;
     this.renderProgress();
   }
@@ -352,15 +377,19 @@ class Pompa {
 
   // Actualización en vivo durante el escaneo: nunca interrumpe lo que estás escribiendo.
   async liveRefresh() {
-    this.data = await sc.snapshot();
-    if (!this.state.open) return;
+    if (this.liveBusy) return; this.liveBusy = true;
+    try { this.data = await sc.snapshot(); } finally { this.liveBusy = false; }
+    if (!this.state.open || document.hidden) return;
+    const sig = `${this.data.visible.length}|${this.data.people.length}|${this.data.people.reduce((n, p) => n + p.items.length, 0)}`;
+    if (sig === this.lastSig) return; // nada nuevo que mostrar
+    this.lastSig = sig;
     const people = this.data.people.filter((p) => !p.hidden && p.visibleCount).length;
     this.$('.stats').textContent = `${plural(this.data.visible.length, 'foto', 'fotos')} · ${plural(people, 'persona', 'personas')}`;
     const a = this.typingIn();
     if (a) {
       if (a.dataset.a === 'query') {
         const grid = this.$('#pgrid');
-        if (grid) { this.prevUrls.forEach((u) => URL.revokeObjectURL(u)); this.prevUrls = this.urls; this.urls = []; grid.innerHTML = this.peopleGrid(); }
+        if (grid) { const n = document.createElement('div'); n.innerHTML = this.peopleGrid(); morphdom(grid, n, { childrenOnly: true, getNodeKey: (x) => (x.nodeType === 1 && x.dataset?.key) || null }); }
       }
       this.pendingRender = true; // se redibuja cuando dejes de escribir
       return;
@@ -374,11 +403,18 @@ class Pompa {
     el.hidden = !s; if (!s) return;
     const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
     const step = s.phase === 'index' ? 'Paso 1 de 2 · ' : s.phase === 'faces' ? 'Paso 2 de 2 · ' : '';
-    el.innerHTML = `<div class="txt"><b>${s.phase === 'models' || s.phase === 'indexed' ? esc(s.label || 'Preparando…') : `${esc(s.label || 'Buscando caras')} · <span class="num">${pct}%</span>`}</b>
-      <span class="ellipsis num">${s.phase === 'models' ? 'Un momento' : s.phase === 'indexed' ? 'Ya podés usar Fotos y Borrar' : `${step}${esc(s.source)} · ${nf.format(s.done)} de ${nf.format(s.total)}`}</span>
-      <div class="bar"><i style="width:${pct}%"></i></div></div>
-      ${s.noStop ? '' : '<button class="stop" data-a="cancel-scan">Frenar</button>'}`;
+    const title = s.phase === 'models' || s.phase === 'indexed' ? esc(s.label || 'Preparando…') : `${esc(s.label || 'Buscando caras')} · <span class="num">${pct}%</span>`;
+    const sub = s.phase === 'models' ? 'Un momento' : s.phase === 'indexed' ? 'Ya podés usar Fotos y Borrar' : `${step}${esc(s.source)} · ${nf.format(s.done)} de ${nf.format(s.total)}`;
+    if (!el.querySelector('.bar') || el.dataset.stop !== String(!s.noStop)) {
+      el.dataset.stop = String(!s.noStop);
+      el.innerHTML = `<div class="txt"><b></b><span class="ellipsis num"></span><div class="bar"><i></i></div></div>${s.noStop ? '' : '<button class="stop" data-a="cancel-scan">Frenar</button>'}`;
+    }
+    // Sólo se actualizan texto y barra: no se recrea nada (sin saltos ni toques perdidos).
+    const t = el.querySelector('b'); if (t.innerHTML !== title) t.innerHTML = title;
+    const u = el.querySelector('.ellipsis'); if (u.textContent !== sub) u.textContent = sub;
+    el.querySelector('.bar i').style.width = `${pct}%`;
   }
+
 
   /* ---------- Personas ---------- */
   tab_people() {
@@ -423,8 +459,8 @@ class Pompa {
     if (!list.length) return `<p class="note" style="grid-column:1/-1;text-align:center;padding:20px 0">Nadie con ese nombre.</p>`;
     const { selecting, sel } = this.state;
     return list.map((p) => `
-      <button class="person ${p.name ? 'named' : ''} ${sel.has(p.id) ? 'sel' : ''}" data-a="${selecting ? 'toggle-sel' : 'open-person'}" data-v="${p.id}">
-        <img class="avatar" alt="" src="${this.url(p.cover?.thumb)}">
+      <button class="person ${p.name ? 'named' : ''} ${sel.has(p.id) ? 'sel' : ''}" data-key="pe-${p.id}" data-a="${selecting ? 'toggle-sel' : 'open-person'}" data-v="${p.id}">
+        <img class="avatar" alt="" src="${this.faceUrl(p.cover)}">
         ${selecting ? `<span class="check">${sel.has(p.id) ? I.check : ''}</span>` : ''}
         <span class="nm ${p.name ? '' : 'unnamed'}">${esc(p.name || 'Sin nombre')}</span>
         <span class="ct num">${plural(p.visibleCount, 'foto', 'fotos')}</span>
@@ -432,8 +468,8 @@ class Pompa {
   }
 
   photoCell(photo, face, ctx) {
-    return `<button class="ph" data-a="view" data-ctx="${ctx}" data-v="${photo.id}" ${face ? `data-f="${face.id}"` : ''} aria-label="${esc(photo.name)}">
-      <img loading="lazy" decoding="async" alt="" src="${this.url(photo.thumb)}">${photo.fav ? `<span class="fav">${I.starFill}</span>` : ''}</button>`;
+    return `<button class="ph" data-key="ph-${photo.id}${face ? `-${face.id}` : ''}" data-a="view" data-ctx="${ctx}" data-v="${photo.id}" ${face ? `data-f="${face.id}"` : ''} aria-label="${esc(photo.name)}">
+      <img loading="lazy" decoding="async" alt="" src="${this.photoUrl(photo)}">${photo.fav ? `<span class="fav">${I.starFill}</span>` : ''}</button>`;
   }
 
   viewPerson(id) {
@@ -445,7 +481,7 @@ class Pompa {
     return `
       <div class="hero">
         <button class="iconbtn back" data-a="back" aria-label="Volver">${I.back}</button>
-        <img class="avatar" alt="" src="${this.url(p.cover?.thumb)}">
+        <img class="avatar" alt="" src="${this.faceUrl(p.cover)}">
         <input class="name-in" data-a="rename" data-v="${p.id}" value="${esc(p.name)}" placeholder="¿Quién es?" maxlength="40" enterkeyhint="done" aria-label="Nombre">
         <p class="sub num">${plural(items.length, 'foto', 'fotos')}${favs ? ` · ${plural(favs, 'favorita', 'favoritas')}` : ''}</p>
       </div>
@@ -466,7 +502,7 @@ class Pompa {
     return `
       <div class="hero">
         <button class="iconbtn back" data-a="back" aria-label="Volver">${I.back}</button>
-        <div class="faces-stack">${ppl.slice(0, 4).map((p) => `<img alt="" src="${this.url(p.cover?.thumb)}">`).join('')}</div>
+        <div class="faces-stack">${ppl.slice(0, 4).map((p) => `<img alt="" src="${this.faceUrl(p.cover)}">`).join('')}</div>
         <p class="brand" style="font-size:26px;margin-top:10px">Juntos</p>
         <p class="sub">${esc(names.join(' + '))} · <span class="num">${plural(items.length, 'foto', 'fotos')}</span></p>
       </div>
@@ -524,7 +560,7 @@ class Pompa {
     const extra = groups.reduce((n, g) => n + g.length - 1, 0);
     return `<p class="note" style="margin-bottom:12px">${plural(groups.length, 'grupo', 'grupos')} de fotos casi iguales. Se conserva la de mejor calidad (marcada) y las copias van a la bóveda: nada se borra.</p>
       <button class="btn primary block" style="margin-bottom:14px" data-a="dupes-all">${I.copies}Guardar ${plural(extra, 'copia', 'copias')} en la bóveda</button>
-      ${groups.map((g, i) => `<div class="dupe"><div class="strip">${g.slice(0, 4).map((p, j) => `<img class="${j === 0 ? 'keep' : ''}" alt="" src="${this.url(p.thumb)}">`).join('')}</div>
+      ${groups.map((g, i) => `<div class="dupe"><div class="strip">${g.slice(0, 4).map((p, j) => `<img class="${j === 0 ? 'keep' : ''}" alt="" src="${this.photoUrl(p)}">`).join('')}</div>
         <div class="meta"><p class="num">${plural(g.length, 'foto', 'fotos')} · ${esc(g[0].name)}</p><button class="btn ghost" data-a="dupes-one" data-v="${i}">Ordenar</button></div></div>`).join('')}`;
   }
 
@@ -553,7 +589,7 @@ class Pompa {
       ${groups.map((g) => `<button class="clean" data-a="clean-open" data-v="${g.k}" ${g.items.length ? '' : 'disabled'}>
         <span class="ic">${icons[g.k]}</span>
         <span class="tx"><span class="t">${esc(g.l)}</span><span class="s">${esc(g.d)}</span></span>
-        <span class="strip">${g.items.slice(0, 3).map((p) => `<img alt="" src="${this.url(p.thumb)}">`).join('')}</span>
+        <span class="strip">${g.items.slice(0, 3).map((p) => `<img alt="" src="${this.photoUrl(p)}">`).join('')}</span>
         <span class="n num">${g.k === 'dupes' && !this.state.dupes ? '…' : nf.format(g.items.length)}</span></button>`).join('')}
       <p class="note small" style="text-align:center;margin-top:14px">Nada se borra sin que lo confirmes. Revisá cada grupo antes.</p>`;
   }
@@ -582,8 +618,8 @@ class Pompa {
         <p class="sub">${esc(g.d)}</p></div>
       <div class="row" style="margin-bottom:10px"><button class="btn ghost" data-a="clean-all" data-v="${k}">${n === items.length ? 'Quitar todas' : 'Elegir todas'}</button></div>
       <p class="note small" style="margin:0 2px 8px">Tocá una foto para sacarla o ponerla en la lista. Mantené apretado para verla grande.</p>
-      <div class="photos">${items.map((p) => `<button class="ph pick ${sel.has(p.id) ? 'on' : ''}" data-a="clean-toggle" data-v="${p.id}" aria-pressed="${sel.has(p.id)}" aria-label="${esc(p.name)}">
-        <img loading="lazy" decoding="async" alt="" src="${this.url(p.thumb)}"><span class="mark">${sel.has(p.id) ? I.check : ''}</span></button>`).join('')}</div>
+      <div class="photos">${items.map((p) => `<button class="ph pick ${sel.has(p.id) ? 'on' : ''}" data-key="ck-${p.id}" data-a="clean-toggle" data-v="${p.id}" aria-pressed="${sel.has(p.id)}" aria-label="${esc(p.name)}">
+        <img loading="lazy" decoding="async" alt="" src="${this.photoUrl(p)}"><span class="mark">${sel.has(p.id) ? I.check : ''}</span></button>`).join('')}</div>
       <div class="selbar"><span class="n num">${plural(n, 'elegida', 'elegidas')}</span>
         <button class="btn ghost" data-a="clean-hide" ${n ? '' : 'disabled'}>${I.lock}Bóveda</button>
         <button class="btn danger-fill" data-a="clean-delete" ${deletable ? '' : 'disabled'}>${I.trash}Borrar ${deletable ? nf.format(deletable) : ''}</button></div>
@@ -609,28 +645,57 @@ class Pompa {
 
   /* ---------- Carpetas ---------- */
   tab_sources() {
-    const { sources } = this.data;
-    const rows = sources.map((s) => {
+    const { sources, visible } = this.data;
+    const bySrc = new Map();
+    for (const p of visible) { const l = bySrc.get(p.sourceId) || []; if (l.length < 4) { l.push(p); bySrc.set(p.sourceId, l); } }
+    const cards = sources.map((s) => {
       const needs = s._access && s._access !== 'granted';
-      return `<div class="group"><div class="item ${s.enabled ? '' : 'off'}">
-        <span class="ic">${I.folder}</span>
-        <div class="tx"><p class="t">${esc(s.name)}</p>
-          <p class="s num ${needs ? 'warn' : ''}">${needs ? (s.kind === 'input' ? 'Volvé a elegirla para escanear' : 'Falta dar acceso') : `${plural(s.photoCount || 0, 'foto', 'fotos')}${s.lastScan ? ` · ${new Date(s.lastScan).toLocaleDateString('es-AR')}` : ' · sin escanear'}`}</p></div>
-        <button class="switch" role="switch" aria-checked="${s.enabled}" aria-label="Incluir ${esc(s.name)}" data-a="toggle-src" data-v="${s.id}"></button></div>
-        <div class="mini-actions">
-          ${needs ? (s.kind === 'input' ? `<button class="chip" aria-pressed="true" data-a="add-source">${I.folderPlus}Volver a elegir</button>` : `<button class="chip" aria-pressed="true" data-a="grant" data-v="${s.id}">${I.check}Dar acceso</button>`)
-            : `<button class="chip" data-a="scan-one" data-v="${s.id}" ${s.enabled ? '' : 'disabled'}>${I.refresh}Escanear</button>`}
-          <button class="chip" data-a="toggle-rec" data-v="${s.id}" aria-pressed="${s.recursive}">Subcarpetas</button>
-          <button class="chip" data-a="remove-src" data-v="${s.id}">${I.trash}Quitar</button>
-        </div></div>`;
+      const cover = bySrc.get(s.id) || [];
+      return `<div class="album ${s.enabled ? '' : 'off'}" data-key="src-${s.id}">
+        <button class="cover" data-a="src-menu" data-v="${s.id}" aria-label="Opciones de ${esc(s.name)}">
+          ${cover.length ? cover.map((p) => `<img alt="" src="${this.photoUrl(p)}">`).join('') + '<i></i>'.repeat(Math.max(0, 4 - cover.length)) : `<span class="ph-empty">${I.folder}</span>`}
+        </button>
+        <div class="meta"><div class="tx"><p class="t">${esc(s.name)}</p>
+          <p class="s num ${needs ? 'warn' : ''}">${needs ? (s.kind === 'input' ? 'Volvé a elegirla' : 'Falta acceso') : plural(s.photoCount || 0, 'foto', 'fotos')}</p></div>
+          <button class="switch sm" role="switch" aria-checked="${s.enabled}" aria-label="Incluir ${esc(s.name)}" data-a="toggle-src" data-v="${s.id}"></button></div>
+      </div>`;
     }).join('');
-    return `<p class="note" style="margin:2px 2px 14px">Pompa sólo mira las carpetas de esta lista. Apagá una para sacarla de la vista sin borrar nada.</p>
-      ${rows}
-      <div class="row" style="margin-top:4px">
-        <button class="btn primary" data-a="add-source">${I.folderPlus}Agregar</button>
-        ${sources.length ? `<button class="btn ghost" data-a="scan" ${this.state.scan ? 'disabled' : ''}>${I.refresh}Escanear todo</button>` : ''}
-      </div>
-      <p class="note small" style="margin:14px 2px 0">Quitar una carpeta borra sólo su índice en Pompa. Tus fotos originales no se tocan nunca.</p>`;
+    return `<div class="albums">${cards}
+        <button class="album add" data-a="add-source"><span class="cover">${I.folderPlus}<b>Agregar carpeta</b></span>
+          <div class="meta"><div class="tx"><p class="t">Elegí varias</p><p class="s">una por vez</p></div></div></button></div>
+      ${sources.length ? `<button class="btn ghost block" style="margin-top:14px" data-a="scan" ${this.state.scan ? 'disabled' : ''}>${I.refresh}Escanear todo</button>` : ''}
+      <p class="note small" style="margin:14px 2px 0">Tocá una carpeta para ver opciones. Apagá el interruptor para sacarla de la vista sin borrar nada. Tus fotos originales no se tocan.</p>`;
+  }
+
+  // Menú de acciones de una carpeta.
+  async srcMenu(id) {
+    const s = this.data.sources.find((x) => x.id === id); if (!s) return;
+    const needs = s._access && s._access !== 'granted';
+    const opts = [
+      needs ? (s.kind === 'input' ? ['reselect', 'Volver a elegir la carpeta', I.folderPlus] : ['grant', 'Dar acceso', I.check]) : ['scan', 'Escanear ahora', I.refresh],
+      ['rec', s.recursive ? 'Sólo la carpeta principal' : 'Incluir subcarpetas', I.folder],
+      ['remove', 'Quitar de Pompa', I.trash],
+    ];
+    const k = await this.menu(s.name, `${plural(s.photoCount || 0, 'foto', 'fotos')}${s.lastScan ? ` · escaneada el ${new Date(s.lastScan).toLocaleDateString('es-AR')}` : ''}`, opts);
+    const fake = (a) => this.onClick({ composedPath: () => [{ dataset: { a, v: id }, tagName: 'BUTTON' }] });
+    if (k === 'scan') return this.startScan([id]);
+    if (k === 'reselect') return this.addSource();
+    if (k === 'grant') return fake('grant');
+    if (k === 'rec') return fake('toggle-rec');
+    if (k === 'remove') return fake('remove-src');
+  }
+
+  menu(title, text, opts) {
+    return new Promise((resolve) => {
+      const d = document.createElement('div'); d.className = 'dialog';
+      d.innerHTML = `<div class="card" role="dialog" aria-label="${esc(title)}"><h3>${esc(title)}</h3><p class="note num">${esc(text)}</p>
+        <div class="list">${opts.map(([k, l, ic]) => `<button class="opt ${k === 'remove' ? 'warn' : ''}" data-r="${k}"><span class="oi">${ic}</span><span>${esc(l)}</span></button>`).join('')}</div>
+        <button class="btn ghost block" data-r="">Cancelar</button></div>`;
+      const done = (val) => { d.remove(); resolve(val); };
+      d.addEventListener('dismiss', () => done(null));
+      d.addEventListener('click', (e) => { const b = e.composedPath().find((n) => n.dataset && 'r' in n.dataset); if (b || e.target === d) done(b?.dataset.r || null); });
+      this.root.appendChild(d);
+    });
   }
 
   /* ---------- Bóveda ---------- */
@@ -646,10 +711,10 @@ class Pompa {
     return `<div class="row" style="margin-bottom:6px"><button class="btn ghost" data-a="vault-lock">${I.lock}Cerrar bóveda</button></div>
       ${!hp.length && !ph.length ? `<div class="empty"><div class="art">${I.shield}</div><h3>Bóveda vacía</h3><p class="note">Desde una persona o una foto, tocá “Bóveda” para guardarla acá.</p></div>` : ''}
       ${hp.length ? `<p class="eyebrow">Personas</p><div class="people">${hp.map((p) => `
-        <button class="person" data-a="show-person" data-v="${p.id}"><img class="avatar" alt="" src="${this.url(p.cover?.thumb)}">
+        <button class="person" data-a="show-person" data-v="${p.id}"><img class="avatar" alt="" src="${this.faceUrl(p.cover)}">
         <span class="nm ${p.name ? '' : 'unnamed'}">${esc(p.name || 'Sin nombre')}</span><span class="ct">Tocá para mostrar</span></button>`).join('')}</div>` : ''}
       ${ph.length ? `<p class="eyebrow">Fotos · tocá para devolverlas</p><div class="photos">${ph.map((p) => `
-        <button class="ph" data-a="show-photo" data-v="${p.id}" aria-label="Mostrar ${esc(p.name)}"><img loading="lazy" alt="" src="${this.url(p.thumb)}"><span class="hid">${I.eye}</span></button>`).join('')}</div>` : ''}`;
+        <button class="ph" data-a="show-photo" data-v="${p.id}" aria-label="Mostrar ${esc(p.name)}"><img loading="lazy" alt="" src="${this.photoUrl(p)}"><span class="hid">${I.eye}</span></button>`).join('')}</div>` : ''}`;
   }
 
   keypadView(title, sub) {
@@ -749,7 +814,7 @@ class Pompa {
     if (t.dataset?.a === 'query') {
       this.state.query = t.value;
       const grid = this.$('#pgrid');
-      if (grid) { this.prevUrls.forEach((u) => URL.revokeObjectURL(u)); this.prevUrls = this.urls; this.urls = []; grid.innerHTML = this.peopleGrid(); }
+      if (grid) { const n = document.createElement('div'); n.innerHTML = this.peopleGrid(); morphdom(grid, n, { childrenOnly: true, getNodeKey: (x) => (x.nodeType === 1 && x.dataset?.key) || null }); }
     }
     if (t.dataset?.a === 'threshold') { const lbl = this.root.querySelector('.range-l span:nth-child(2)'); if (lbl) lbl.textContent = Number(t.value).toFixed(2); }
   }
@@ -761,9 +826,7 @@ class Pompa {
       t.value = '';
       if (!files.length) return this.toast('Esa carpeta no tiene fotos compatibles');
       const src = await sc.addSourceFromFiles(files);
-      this.toast(`“${src.name}” agregada`);
-      await this.refresh(); this.startScan([src.id]);
-      return;
+      return this.afterAdd(src);
     }
     if (t.dataset?.a === 'rename') { await sc.renamePerson(t.dataset.v, t.value); await this.refresh(); this.toast('Nombre guardado'); }
     if (t.dataset?.a === 'threshold') { this.settings.threshold = Number(t.value); await db.setSetting('threshold', this.settings.threshold); }
@@ -791,6 +854,7 @@ class Pompa {
           if (!(await this.confirm(`¿Quitar “${s.name}”?`, 'Se borra su índice en Pompa. Tus fotos originales no se tocan.', 'Quitar'))) return;
           await sc.removeSource(v); this.toast('Carpeta quitada'); return this.refreshSources();
         }
+        case 'src-menu': return this.srcMenu(v);
         case 'open-person': S.view = { type: 'person', id: v }; this.$('.body').scrollTop = 0; return this.render();
         case 'sel-start': S.selecting = true; S.sel.clear(); return this.render();
         case 'sel-cancel': S.selecting = false; S.sel.clear(); return this.render();
@@ -863,12 +927,26 @@ class Pompa {
       this.$('.picker').click();
       return;
     }
-    this.toast(`“${src.name}” agregada`);
-    await this.refresh(); this.startScan([src.id]);
+    return this.afterAdd(src);
+  }
+
+  // Después de cada carpeta: ofrecer sumar otra antes de empezar (el selector de Android elige una por vez).
+  async afterAdd(src) {
+    this.scanQueue.add(src.id);
+    await this.refresh();
+    if (this.state.scan) { this.toast(`“${src.name}” queda en la fila`); return; }
+    const more = await this.confirm(`“${src.name}” agregada`, '¿Querés sumar otra carpeta antes de empezar? Se analizan todas juntas, en segundo plano.', 'Agregar otra', false, 'Empezar');
+    if (more) { this.addSource(); return; }
+    const ids = [...this.scanQueue]; this.scanQueue.clear();
+    this.startScan(ids);
   }
 
   async startScan(ids) {
-    if (this.state.scan) return;
+    if (this.state.scan) {
+      (ids || this.data.sources.filter((s) => s.enabled).map((s) => s.id)).forEach((id) => this.scanQueue.add(id));
+      this.toast('Queda en la fila: sigue después de lo actual');
+      return;
+    }
     this.abort = new AbortController();
     this.state.scan = { phase: 'models', done: 0, total: 0, source: '' };
     this.setRing(0); this.renderProgress();
@@ -879,7 +957,7 @@ class Pompa {
         onProgress: (p) => {
           this.state.scan = p; this.setRing(p.total ? p.done / p.total : 0); this.renderProgress();
           if (p.phase === 'indexed') { last = Date.now(); this.state.dupes = null; this.liveRefresh(); if (p.pending) this.toast(`Fotos ordenadas · ahora busco caras en ${nf.format(p.pending)}`); return; }
-          if (Date.now() - last > 2500) { last = Date.now(); this.liveRefresh(); }
+          if (Date.now() - last > 3000) { last = Date.now(); this.liveRefresh(); }
         },
       });
       const extra = r.docs ? ` · ${plural(r.docs, 'papel', 'papeles')}` : '';
@@ -891,6 +969,7 @@ class Pompa {
     } finally {
       this.state.scan = null; this.setRing(null);
       await this.refreshSources();
+      if (this.scanQueue.size) { const q = [...this.scanQueue]; this.scanQueue.clear(); setTimeout(() => this.startScan(q), 300); }
     }
   }
 
@@ -1074,11 +1153,11 @@ class Pompa {
   }
 
   /* ---------- Diálogos ---------- */
-  confirm(title, text, ok, danger = false) {
+  confirm(title, text, ok, danger = false, cancel = 'Cancelar') {
     return new Promise((resolve) => {
       const d = document.createElement('div'); d.className = 'dialog';
       d.innerHTML = `<div class="card" role="alertdialog" aria-label="${esc(title)}"><h3>${esc(title)}</h3><p class="note">${esc(text)}</p>
-        <div class="row"><button class="btn ghost" data-r="0">Cancelar</button><button class="btn ${danger ? 'danger-fill' : 'primary'}" data-r="1">${esc(ok)}</button></div></div>`;
+        <div class="row"><button class="btn ghost" data-r="0">${esc(cancel)}</button><button class="btn ${danger ? 'danger-fill' : 'primary'}" data-r="1">${esc(ok)}</button></div></div>`;
       const done = (val) => { d.remove(); resolve(val); };
       d.addEventListener('dismiss', () => done(false));
       d.addEventListener('click', (e) => { const b = e.composedPath().find((n) => n.dataset?.r); if (b || e.target === d) done(b?.dataset.r === '1'); });

@@ -2,7 +2,7 @@
 // Concepto: una burbuja de vidrio que se despliega en una ventana compacta. Tinta profunda + champagne.
 export const FONT_FACES = (base) => `
 @font-face{font-family:"Rostra Sans";src:url("${base}fonts/manrope.woff2") format("woff2");font-weight:200 800;font-display:swap}
-@font-face{font-family:"Rostra Serif";src:url("${base}fonts/instrument-serif-italic.woff2") format("woff2");font-style:italic;font-weight:400;font-display:swap}`;
+@font-face{font-family:"Pompa Display";src:url("${base}fonts/jakarta.woff2") format("woff2");font-weight:200 800;font-display:swap}`;
 
 export const CSS = /* css */ `
 :host{
@@ -14,7 +14,7 @@ export const CSS = /* css */ `
   --danger:#F08A7E; --scrim:rgba(4,4,6,.42); --shadow:0 24px 60px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.35);
   --orb-a:#2A2A30; --orb-b:#0E0E11;
   --sans:"Rostra Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --serif:"Rostra Serif","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --display:"Pompa Display","Rostra Sans",ui-sans-serif,system-ui,sans-serif;
   --bubble:30px;
   all:initial; font-family:var(--sans); color:var(--text); color-scheme:dark;
   -webkit-tap-highlight-color:transparent; font-feature-settings:"ss01","cv11";
@@ -86,9 +86,11 @@ svg{display:block}
 .resize:active i,.sheet.resizing .resize i{background:var(--accent);width:56px}
 .head{display:flex;align-items:center;gap:10px;padding:14px 8px 8px 18px}
 .head .grow{flex:1;min-width:0}
-.brand{font-family:var(--serif);font-style:italic;font-size:27px;line-height:1;letter-spacing:-.2px;color:var(--text)}
+.eyebrow-brand{font-family:var(--display);font-size:10.5px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--text-2);margin-bottom:4px}
+.eyebrow-brand i{font-style:normal;color:var(--accent)}
+.brand{font-family:var(--display);font-weight:800;font-size:28px;line-height:1;letter-spacing:-.9px;color:var(--text)}
 .brand i{font-style:normal;color:var(--accent)}
-.stats{font-size:11px;color:var(--muted);margin-top:4px;letter-spacing:.2px}
+.stats{font-size:11.5px;color:var(--muted);margin-top:6px;letter-spacing:.2px}
 .iconbtn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--text-2);flex:none;transition:background .15s}
 .iconbtn:active{background:var(--raise-2)} .iconbtn svg{width:20px;height:20px}
 
@@ -142,7 +144,7 @@ svg{display:block}
 .empty .art{width:96px;height:96px;margin:0 auto 18px;border-radius:30px;display:grid;place-items:center;color:var(--accent);
   background:radial-gradient(100% 100% at 30% 20%,var(--raise-2),transparent);border:1px solid var(--line-2);transform:rotate(-6deg)}
 .empty .art svg{width:42px;height:42px;transform:rotate(6deg)}
-.empty h3{font-family:var(--serif);font-style:italic;font-size:26px;line-height:1.1;margin-bottom:8px;text-wrap:balance}
+.empty h3{font-family:var(--display);font-weight:780;letter-spacing:-.45px;font-size:21px;line-height:1.1;margin-bottom:8px;text-wrap:balance}
 .empty .note{margin:0 auto 18px;max-width:30ch}
 .perks{list-style:none;text-align:left;margin:4px 0 18px;display:grid;gap:10px}
 .perks li{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.4;color:var(--text-2)}
@@ -181,7 +183,7 @@ svg{display:block}
 .ph .hid svg{width:20px;height:20px}
 .month{display:flex;align-items:baseline;justify-content:space-between;margin:18px 2px 8px}
 .month:first-of-type{margin-top:4px}
-.month h4{font-family:var(--serif);font-style:italic;font-size:20px;line-height:1}
+.month h4{font-family:var(--display);font-weight:780;letter-spacing:-.45px;font-size:15px;line-height:1}
 .month span{font-size:11px;color:var(--muted)}
 
 .dupe{padding:10px;border-radius:16px;background:var(--raise);border:1px solid var(--line);margin-bottom:10px}
@@ -191,6 +193,31 @@ svg{display:block}
 .dupe .meta{display:flex;align-items:center;gap:8px}
 .dupe .meta p{flex:1;font-size:11.5px;color:var(--text-2)}
 .dupe .meta .btn{height:32px;font-size:11.5px;padding:0 12px}
+
+/* Carpetas como álbumes */
+.albums{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.album{border-radius:20px;background:var(--raise);border:1px solid var(--line);padding:6px;display:flex;flex-direction:column;gap:6px;min-width:0;text-align:left}
+.album.off .cover{opacity:.4;filter:grayscale(1)}
+.album .cover{aspect-ratio:1;width:100%;border-radius:15px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;background:var(--raise-2);transition:transform .12s}
+.album .cover:active{transform:scale(.97)}
+.album .cover img{width:100%;height:100%;object-fit:cover;display:block}
+.album .cover i{background:var(--raise-2)}
+.album .cover .ph-empty{grid-column:1/-1;grid-row:1/-1;display:grid;place-items:center;color:var(--muted)}
+.album .cover .ph-empty svg{width:30px;height:30px}
+.album .meta{display:flex;align-items:center;gap:6px;padding:2px 6px 4px}
+.album .tx{flex:1;min-width:0}
+.album .t{font-family:var(--display);font-size:13.5px;font-weight:750;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.album .s{font-size:11px;color:var(--muted)}
+.album .s.warn{color:var(--accent)}
+.album.add .cover{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--accent);border:1.5px dashed var(--line-2);background:transparent}
+.album.add .cover svg{width:30px;height:30px}
+.album.add .cover b{font-size:12px;font-weight:700;color:var(--text)}
+.switch.sm{width:36px;height:22px}
+.switch.sm::after{width:16px;height:16px}
+.switch.sm[aria-checked="true"]::after{transform:translateX(14px)}
+.dialog .opt .oi{width:34px;height:34px;border-radius:11px;background:var(--raise-2);display:grid;place-items:center;color:var(--accent);flex:none}
+.dialog .opt .oi svg{width:18px;height:18px}
+.dialog .opt.warn span:last-child{color:var(--danger)}
 
 /* Borrar */
 .clean{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border-radius:16px;background:var(--raise);border:1px solid var(--line);margin-bottom:8px;transition:transform .12s}
@@ -214,7 +241,7 @@ svg{display:block}
 .hero .back{position:absolute;left:-6px;top:-2px}
 .hero .avatar{width:84px;height:84px}
 .hero .name-in{margin-top:12px;width:100%;max-width:230px;text-align:center;background:transparent;border:0;border-bottom:1px dashed var(--line-2);
-  font-family:var(--serif);font-style:italic;font-size:26px;line-height:1.2;padding:2px 4px;color:var(--text)}
+  font-family:var(--display);font-weight:780;letter-spacing:-.45px;font-size:21px;line-height:1.25;padding:2px 4px;color:var(--text)}
 .hero .name-in::placeholder{color:var(--muted)}
 .hero .sub{font-size:11.5px;color:var(--muted);margin-top:6px}
 .faces-stack{display:flex;justify-content:center;margin-bottom:4px}
@@ -258,7 +285,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:26px}
 .vault{display:flex;flex-direction:column;align-items:center;text-align:center;padding:0}
 .vault .lock{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin-bottom:8px}
 .vault .lock svg{width:20px;height:20px}
-.vault h3{font-family:var(--serif);font-style:italic;font-size:22px;margin-bottom:2px}
+.vault h3{font-family:var(--display);font-weight:780;letter-spacing:-.45px;font-size:19px;margin-bottom:2px}
 .vault .note{font-size:11.5px;max-width:32ch}
 .pins{display:flex;gap:12px;margin:12px 0 14px}
 .pins i{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--line-2);transition:background .15s,transform .15s}
@@ -299,7 +326,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:26px}
 @keyframes kb2{from{transform:scale(1.14) translate(2%,1%)}to{transform:scale(1.02) translate(0,0)}}
 .show .veil{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.55),transparent 28%,transparent 62%,rgba(0,0,0,.7))}
 .show .cap{position:absolute;left:24px;right:24px;bottom:calc(36px + env(safe-area-inset-bottom))}
-.show .cap h2{font-family:var(--serif);font-style:italic;font-size:40px;line-height:1}
+.show .cap h2{font-family:var(--display);font-weight:780;letter-spacing:-.45px;font-size:32px;line-height:1}
 .show .cap p{font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:8px}
 .show .ctl{position:absolute;top:calc(10px + env(safe-area-inset-top));right:10px;display:flex;gap:6px}
 .show .ctl .iconbtn{color:#fff;background:rgba(0,0,0,.3)}
@@ -314,7 +341,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:26px}
 /* Diálogo y aviso */
 .dialog{position:fixed;inset:0;z-index:2147483004;display:grid;place-items:center;background:var(--scrim);padding:20px;animation:fade .15s}
 .dialog .card{width:100%;max-width:340px;background:var(--glass);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);border:1px solid var(--line-2);border-radius:24px;padding:22px 20px 18px;box-shadow:var(--shadow)}
-.dialog h3{font-family:var(--serif);font-style:italic;font-size:24px;line-height:1.1;margin-bottom:8px}
+.dialog h3{font-family:var(--display);font-weight:780;letter-spacing:-.45px;font-size:19px;line-height:1.1;margin-bottom:8px}
 .dialog .note{margin-bottom:18px}
 .dialog .list{max-height:44dvh;overflow:auto;margin:0 -8px 14px}
 .dialog .opt{display:flex;align-items:center;gap:12px;padding:8px;border-radius:14px;width:100%;text-align:left}
