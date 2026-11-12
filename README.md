@@ -1,12 +1,12 @@
-# Rostra · tus personas, en una burbuja
+# Pompa · tus personas, en una pompa
 
-**Rostra** (antes “Memora”) es una galería que reconoce las caras de las carpetas que elijas y arma un álbum por persona. Vive en un orbe flotante que se despliega en una ventana compacta. Todo corre en el dispositivo: sin cuentas, sin nube.
+**Pompa** (antes “Memora”) es una galería que reconoce las caras de las carpetas que elijas y arma un álbum por persona. Vive en una burbuja flotante que se despliega en una ventana compacta. Todo corre en el dispositivo: sin cuentas, sin nube.
 
 ## Funciones
 
 | Función | Dónde |
 |---|---|
-| Orbe flotante libre (24/30/38 px), con presencia en reposo ajustable, que despliega una ventana compacta hacia el lado con más espacio | Orbe · Ajustes |
+| Burbuja flotante libre (24/30/38 px), con presencia en reposo ajustable, que despliega una ventana compacta hacia el lado con más espacio | Burbuja · Ajustes |
 | Álbumes por persona: nombre, portada, unir, “No es esta persona” | Personas |
 | **Buscar** personas por nombre | Personas |
 | **Juntos**: fotos donde aparecen dos o más personas elegidas | Personas → Elegir |
@@ -16,7 +16,7 @@
 | **Bóveda con PIN** para personas y fotos ocultas | Bóveda |
 | **Armar carpetas**: copia las fotos a una carpeta por persona | Personas |
 | Tema Sistema / Oscuro / Claro | Ajustes |
-| Orbe sobre otras apps (APK) | Ajustes |
+| Burbuja sobre otras apps (APK) | Ajustes |
 
 > El PIN de la bóveda evita miradas: no cifra los archivos originales.
 

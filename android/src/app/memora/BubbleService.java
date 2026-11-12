@@ -62,7 +62,7 @@ public class BubbleService extends Service {
             if (Build.VERSION.SDK_INT >= 26) {
                 Class<?> chClass = Class.forName("android.app.NotificationChannel");
                 Object ch = chClass.getConstructor(String.class, CharSequence.class, int.class)
-                        .newInstance(CHANNEL, "Orbe flotante", IMPORTANCE_MIN);
+                        .newInstance(CHANNEL, "Burbuja flotante", IMPORTANCE_MIN);
                 NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
                 NotificationManager.class.getMethod("createNotificationChannel", chClass).invoke(nm, ch);
                 b = Notification.Builder.class.getConstructor(Context.class, String.class).newInstance(this, CHANNEL);
@@ -73,8 +73,8 @@ public class BubbleService extends Service {
             b = new Notification.Builder(this);
         }
         return b.setSmallIcon(R.drawable.ic_stat)
-                .setContentTitle("Rostra")
-                .setContentText("El orbe está activo · tocá para abrir")
+                .setContentTitle("Pompa")
+                .setContentText("La burbuja está activa · tocá para abrir")
                 .setContentIntent(openApp())
                 .setOngoing(true)
                 .build();
@@ -157,13 +157,13 @@ public class BubbleService extends Service {
             stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(1.3f * density);
             glyph.setColor(0xFFE4C894); glyph.setStyle(Paint.Style.STROKE); glyph.setStrokeWidth(1.6f * density);
             glyph.setStrokeCap(Paint.Cap.ROUND); glyph.setStrokeJoin(Paint.Join.ROUND);
-            setContentDescription("Abrir Rostra");
+            setContentDescription("Abrir Pompa");
         }
 
         @Override
         protected void onDraw(Canvas cv) {
             float cx = pad + dot / 2f, cy = pad + dot / 2f, r = dot / 2f;
-            // Orbe de vidrio oscuro con aro champagne, igual que en la app
+            // Burbuja de vidrio oscuro con aro champagne, igual que en la app
             cv.drawCircle(cx, cy + 2f * d, r * 0.96f, shadow);
             fill.setShader(new android.graphics.RadialGradient(cx - r * 0.35f, cy - r * 0.55f, r * 1.6f,
                     0xFF2E2E35, 0xFF0E0E11, android.graphics.Shader.TileMode.CLAMP));

@@ -1,11 +1,11 @@
-// Rostra · orbe flotante + ventana compacta. Todo local.
+// Pompa · burbuja flotante + ventana compacta. Todo local.
 import { CSS, FONT_FACES } from './styles.js';
 import * as db from './db.js';
 import * as sc from './scanner.js';
 import { exportToFolder, exportToZip, exportToNative } from './exporter.js';
 
 const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
-const VERSION = '2.0';
+const VERSION = '2.1';
 
 const sv = (p, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${p}</svg>`;
 const I = {
@@ -55,7 +55,7 @@ async function sha(text) {
 }
 const vibrate = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* sin vibración */ } };
 
-class Rostra {
+class Pompa {
   constructor(host = document.body) {
     this.hostEl = document.createElement('rostra-gallery');
     host.appendChild(this.hostEl);
@@ -81,15 +81,15 @@ class Rostra {
       pinHash: await db.getSetting('pinHash', ''),
     };
     this.root.innerHTML = `<style>${CSS}</style>
-      <button class="bubble" part="bubble" aria-label="Abrir Rostra" aria-expanded="false">
+      <button class="bubble" part="bubble" aria-label="Abrir Pompa" aria-expanded="false">
         <span class="dot">${I.gallery}
           <svg class="ring" viewBox="0 0 36 36" style="display:none"><circle class="bg" cx="18" cy="18" r="16"/><circle class="fg" cx="18" cy="18" r="16" stroke-dasharray="100.5" stroke-dashoffset="100.5"/></svg>
         </span>
       </button>
       <div class="scrim"></div>
-      <section class="sheet" role="dialog" aria-modal="true" aria-label="Rostra">
+      <section class="sheet" role="dialog" aria-modal="true" aria-label="Pompa">
         <header class="head">
-          <div class="grow"><p class="brand">Rostra<i>.</i></p><p class="stats num"></p></div>
+          <div class="grow"><p class="brand">Pompa<i>.</i></p><p class="stats num"></p></div>
           <button class="iconbtn" data-a="close" aria-label="Cerrar">${I.close}</button>
         </header>
         <div class="progress" hidden></div>
@@ -114,7 +114,7 @@ class Rostra {
     window.addEventListener('popstate', () => { if (this.state.open && !NATIVE) this.close(true); });
     window.addEventListener('keydown', (e) => this.onKey(e));
     await this.refresh();
-    if (NATIVE) { this.syncNativePos(); this.open(); } // el APK abre directo la ventana junto al orbe
+    if (NATIVE) { this.syncNativePos(); this.open(); } // el APK abre directo la ventana junto a la burbuja
   }
 
   /* ---------- Apariencia ---------- */
@@ -130,7 +130,7 @@ class Rostra {
     this.placeBubble();
   }
 
-  /* ---------- Orbe ---------- */
+  /* ---------- Burbuja ---------- */
   placeBubble(x, y) {
     const b = this.$('.bubble'); const box = this.bubblePx + 14;
     const W = window.innerWidth; const H = window.innerHeight;
@@ -267,7 +267,7 @@ class Rostra {
     const people = this.data.people.filter((p) => !p.hidden && p.visibleCount).length;
     this.$('.stats').textContent = this.data.visible.length
       ? `${plural(this.data.visible.length, 'foto', 'fotos')} · ${plural(people, 'persona', 'personas')}`
-      : 'Tus personas, en una burbuja';
+      : 'Tus personas, en una pompa';
     let html;
     if (view?.type === 'person') html = this.viewPerson(view.id);
     else if (view?.type === 'together') html = this.viewTogether(view.ids);
@@ -292,7 +292,7 @@ class Rostra {
     if (!sources.length) {
       return `${this.overlayBanner()}<div class="empty"><div class="art">${I.gallery}</div>
         <h3>Tus personas, ordenadas solas</h3>
-        <p class="note">Elegí las carpetas que quieras. Rostra reconoce cada cara y arma su álbum, sin subir nada a internet.</p>
+        <p class="note">Elegí las carpetas que quieras. Pompa reconoce cada cara y arma su álbum, sin subir nada a internet.</p>
         <ul class="perks">
           <li>${I.people}<span><b>Álbumes por persona</b> con nombre, portada y recuerdos.</span></li>
           <li>${I.together}<span><b>Juntos</b>: las fotos donde aparecen dos o más personas.</span></li>
@@ -458,13 +458,13 @@ class Rostra {
           <button class="chip" data-a="remove-src" data-v="${s.id}">${I.trash}Quitar</button>
         </div></div>`;
     }).join('');
-    return `<p class="note" style="margin:2px 2px 14px">Rostra sólo mira las carpetas de esta lista. Apagá una para sacarla de la vista sin borrar nada.</p>
+    return `<p class="note" style="margin:2px 2px 14px">Pompa sólo mira las carpetas de esta lista. Apagá una para sacarla de la vista sin borrar nada.</p>
       ${rows}
       <div class="row" style="margin-top:4px">
         <button class="btn primary" data-a="add-source">${I.folderPlus}Agregar</button>
         ${sources.length ? `<button class="btn ghost" data-a="scan" ${this.state.scan ? 'disabled' : ''}>${I.refresh}Escanear todo</button>` : ''}
       </div>
-      <p class="note small" style="margin:14px 2px 0">Quitar una carpeta borra sólo su índice en Rostra. Tus fotos originales no se tocan nunca.</p>`;
+      <p class="note small" style="margin:14px 2px 0">Quitar una carpeta borra sólo su índice en Pompa. Tus fotos originales no se tocan nunca.</p>`;
   }
 
   /* ---------- Bóveda ---------- */
@@ -533,9 +533,9 @@ class Rostra {
     return `
       <p class="eyebrow">Apariencia</p>
       <div class="group"><div class="item stack"><div class="tx"><p class="t">Tema</p></div>${seg(THEMES, this.settings.theme, 'theme')}</div></div>
-      <p class="eyebrow">Orbe flotante</p>
+      <p class="eyebrow">Burbuja flotante</p>
       <div class="group">
-        <div class="item stack"><div class="tx"><p class="t">Tamaño</p><p class="s">Movelo a donde quieras: se queda donde lo soltás.</p></div>${seg(SIZES.map((s) => ({ k: s.k, l: `${s.l} · ${s.px}` })), this.settings.size, 'size')}</div>
+        <div class="item stack"><div class="tx"><p class="t">Tamaño</p><p class="s">Movela a donde quieras: se queda donde la soltás.</p></div>${seg(SIZES.map((s) => ({ k: s.k, l: `${s.l} · ${s.px}` })), this.settings.size, 'size')}</div>
         <div class="item stack"><div class="tx"><p class="t">Presencia en reposo</p></div>${seg(IDLE, this.settings.idle, 'idle')}</div>
         ${NATIVE ? this.overlayItem() : ''}
       </div>
@@ -552,21 +552,21 @@ class Rostra {
         <div class="item"><span class="ic">${I.trash}</span><div class="tx"><p class="t">Borrar todo el índice</p><p class="s">Tus fotos originales quedan intactas.</p></div>
           <button class="chip" data-a="wipe">Borrar</button></div>
       </div>
-      <p class="note small" style="text-align:center;margin-top:18px">Rostra ${VERSION} · hecho para quedarse en tu teléfono</p>`;
+      <p class="note small" style="text-align:center;margin-top:18px">Pompa ${VERSION} · hecho para quedarse en tu teléfono</p>`;
   }
 
   overlayItem() {
     let on = false; let can = false;
     try { on = window.MemoraNative.overlayEnabled(); can = window.MemoraNative.canOverlay(); } catch { /* */ }
     return `<div class="item"><div class="tx"><p class="t">Sobre otras apps</p>
-      <p class="s">${on && !can ? 'Falta el permiso de Android' : 'El orbe queda flotando cuando salís'}</p></div>
-      <button class="switch" role="switch" aria-checked="${on && can}" aria-label="Orbe sobre otras apps" data-a="overlay"></button></div>`;
+      <p class="s">${on && !can ? 'Falta el permiso de Android' : 'La burbuja queda flotando cuando salís'}</p></div>
+      <button class="switch" role="switch" aria-checked="${on && can}" aria-label="Burbuja sobre otras apps" data-a="overlay"></button></div>`;
   }
 
   overlayBanner() {
     if (!NATIVE) return '';
     try { if (window.MemoraNative.canOverlay()) return ''; } catch { return ''; }
-    return `<div class="banner"><p>Dejá el orbe flotando sobre cualquier app.</p><button class="btn primary" data-a="overlay-on">Activar</button></div>`;
+    return `<div class="banner"><p>Dejá la burbuja flotando sobre cualquier app.</p><button class="btn primary" data-a="overlay-on">Activar</button></div>`;
   }
 
   /* ---------- Eventos ---------- */
@@ -614,7 +614,7 @@ class Rostra {
         case 'toggle-rec': { const s = this.data.sources.find((x) => x.id === v); await sc.setSource(v, { recursive: !s.recursive }); this.toast(s.recursive ? 'Sólo la carpeta principal' : 'Incluye subcarpetas · volvé a escanear'); return this.refreshSources(); }
         case 'remove-src': {
           const s = this.data.sources.find((x) => x.id === v);
-          if (!(await this.confirm(`¿Quitar “${s.name}”?`, 'Se borra su índice en Rostra. Tus fotos originales no se tocan.', 'Quitar'))) return;
+          if (!(await this.confirm(`¿Quitar “${s.name}”?`, 'Se borra su índice en Pompa. Tus fotos originales no se tocan.', 'Quitar'))) return;
           await sc.removeSource(v); this.toast('Carpeta quitada'); return this.refreshSources();
         }
         case 'open-person': S.view = { type: 'person', id: v }; this.$('.body').scrollTop = 0; return this.render();
@@ -652,13 +652,13 @@ class Rostra {
         case 'overlay-on': window.MemoraNative.setOverlay(true); return this.toast('Activá “Mostrar sobre otras apps” y volvé');
         case 'overlay': {
           const M = window.MemoraNative; const active = M.overlayEnabled() && M.canOverlay();
-          if (active) { M.setOverlay(false); this.toast('El orbe queda sólo dentro de Rostra'); }
-          else { M.setOverlay(true); this.toast(M.canOverlay() ? 'Listo: salí y lo vas a ver flotando' : 'Activá “Mostrar sobre otras apps” y volvé'); }
+          if (active) { M.setOverlay(false); this.toast('La burbuja queda sólo dentro de Pompa'); }
+          else { M.setOverlay(true); this.toast(M.canOverlay() ? 'Listo: salí y la vas a ver flotando' : 'Activá “Mostrar sobre otras apps” y volvé'); }
           return this.render();
         }
         case 'regroup': return this.regroup();
         case 'wipe':
-          if (!(await this.confirm('¿Borrar todo?', 'Se borran carpetas, caras, nombres y la bóveda de Rostra. Tus fotos originales quedan intactas.', 'Borrar'))) return;
+          if (!(await this.confirm('¿Borrar todo?', 'Se borran carpetas, caras, nombres y la bóveda de Pompa. Tus fotos originales quedan intactas.', 'Borrar'))) return;
           await db.clearAll(); this.settings.pinHash = ''; S.view = null; S.vaultOpen = false; this.toast('Índice borrado'); return this.refresh();
         default:
       }
@@ -926,9 +926,9 @@ class Rostra {
 
 export async function mountMemora(host) {
   if (window.__memora) return window.__memora;
-  const m = new Rostra(host);
-  window.__memora = m; window.__rostra = m;
+  const m = new Pompa(host);
+  window.__memora = m; window.__rostra = m; window.__pompa = m;
   await m.init();
   return m;
 }
-export const mountRostra = mountMemora;
+export const mountPompa = mountMemora;

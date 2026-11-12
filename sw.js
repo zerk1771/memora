@@ -1,5 +1,5 @@
-// Rostra · service worker: shell + detector facial disponibles offline.
-const VERSION = 'rostra-v2';
+// Pompa · service worker: shell + detector facial disponibles offline.
+const VERSION = 'pompa-v3';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './icons/icon.svg', './icons/icon-maskable.svg',
   './src/widget.js', './src/styles.js', './src/db.js', './src/scanner.js', './src/exporter.js',

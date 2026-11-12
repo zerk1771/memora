@@ -1,5 +1,5 @@
-// Rostra · sistema visual. Encapsulado en Shadow DOM: no pisa estilos de la app anfitriona.
-// Concepto: un "orbe" de vidrio que se despliega en una ventana compacta. Tinta profunda + champagne.
+// Pompa · sistema visual. Encapsulado en Shadow DOM: no pisa estilos de la app anfitriona.
+// Concepto: una burbuja de vidrio que se despliega en una ventana compacta. Tinta profunda + champagne.
 export const FONT_FACES = (base) => `
 @font-face{font-family:"Rostra Sans";src:url("${base}fonts/manrope.woff2") format("woff2");font-weight:200 800;font-display:swap}
 @font-face{font-family:"Rostra Serif";src:url("${base}fonts/instrument-serif-italic.woff2") format("woff2");font-style:italic;font-weight:400;font-display:swap}`;
