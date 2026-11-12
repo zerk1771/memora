@@ -62,7 +62,7 @@ public class BubbleService extends Service {
             if (Build.VERSION.SDK_INT >= 26) {
                 Class<?> chClass = Class.forName("android.app.NotificationChannel");
                 Object ch = chClass.getConstructor(String.class, CharSequence.class, int.class)
-                        .newInstance(CHANNEL, "Burbuja flotante", IMPORTANCE_MIN);
+                        .newInstance(CHANNEL, "Orbe flotante", IMPORTANCE_MIN);
                 NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
                 NotificationManager.class.getMethod("createNotificationChannel", chClass).invoke(nm, ch);
                 b = Notification.Builder.class.getConstructor(Context.class, String.class).newInstance(this, CHANNEL);
@@ -73,8 +73,8 @@ public class BubbleService extends Service {
             b = new Notification.Builder(this);
         }
         return b.setSmallIcon(R.drawable.ic_stat)
-                .setContentTitle("Memora")
-                .setContentText("Burbuja activa · tocá para abrir la galería")
+                .setContentTitle("Rostra")
+                .setContentText("El orbe está activo · tocá para abrir")
                 .setContentIntent(openApp())
                 .setOngoing(true)
                 .build();
@@ -151,20 +151,28 @@ public class BubbleService extends Service {
         BubbleView(Context c, int dot, int pad, float density) {
             super(c);
             this.dot = dot; this.pad = pad; this.d = density;
-            fill.setColor(0xFF141414);
-            shadow.setColor(0x55000000);
-            stroke.setColor(0xFFA8E063); stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(1.5f * density);
-            glyph.setColor(0xFFA8E063); glyph.setStyle(Paint.Style.STROKE); glyph.setStrokeWidth(1.6f * density);
+            shadow.setColor(0x66000000);
+            shadow.setMaskFilter(new android.graphics.BlurMaskFilter(4 * density, android.graphics.BlurMaskFilter.Blur.NORMAL));
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null); // necesario para la sombra difusa
+            stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(1.3f * density);
+            glyph.setColor(0xFFE4C894); glyph.setStyle(Paint.Style.STROKE); glyph.setStrokeWidth(1.6f * density);
             glyph.setStrokeCap(Paint.Cap.ROUND); glyph.setStrokeJoin(Paint.Join.ROUND);
-            setContentDescription("Abrir Memora");
+            setContentDescription("Abrir Rostra");
         }
 
         @Override
         protected void onDraw(Canvas cv) {
             float cx = pad + dot / 2f, cy = pad + dot / 2f, r = dot / 2f;
-            cv.drawCircle(cx, cy + 1.5f * d, r, shadow);
+            // Orbe de vidrio oscuro con aro champagne, igual que en la app
+            cv.drawCircle(cx, cy + 2f * d, r * 0.96f, shadow);
+            fill.setShader(new android.graphics.RadialGradient(cx - r * 0.35f, cy - r * 0.55f, r * 1.6f,
+                    0xFF2E2E35, 0xFF0E0E11, android.graphics.Shader.TileMode.CLAMP));
             cv.drawCircle(cx, cy, r, fill);
+            stroke.setShader(new android.graphics.SweepGradient(cx, cy,
+                    new int[]{0xFFE4C894, 0xFFF6E7C8, 0xFFC9A46A, 0x33FFFFFF, 0xFFE4C894}, null));
             cv.drawCircle(cx, cy, r - stroke.getStrokeWidth() / 2, stroke);
+            Paint hl = new Paint(Paint.ANTI_ALIAS_FLAG); hl.setColor(0x26FFFFFF);
+            cv.drawOval(new RectF(cx - r * 0.45f, cy - r * 0.86f, cx + r * 0.25f, cy - r * 0.32f), hl);
             // Ícono galería en grilla de 24: foto de atrás + foto de adelante con montaña y sol
             float k = dot * 0.58f / 24f, ox = cx - 12 * k, oy = cy - 12 * k;
             Paint fillP = new Paint(glyph); fillP.setStyle(Paint.Style.FILL);

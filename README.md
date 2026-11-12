@@ -1,21 +1,24 @@
-# Memora · caras por carpeta
+# Rostra · tus personas, en una burbuja
 
-Galería **flotante** que detecta caras y agrupa las fotos por persona, **sólo de las carpetas que el usuario elige**. Todo corre en el dispositivo: no hay servidor ni subida de fotos.
+**Rostra** (antes “Memora”) es una galería que reconoce las caras de las carpetas que elijas y arma un álbum por persona. Vive en un orbe flotante que se despliega en una ventana compacta. Todo corre en el dispositivo: sin cuentas, sin nube.
 
-## Qué hace
+## Funciones
 
 | Función | Dónde |
 |---|---|
-| Burbuja flotante de 30 px (Mini 24 / Chica 30 / Media 40), arrastrable, se pega al borde y recuerda su lugar | Burbuja · Ajustes |
-| Elegir qué carpetas mirar, incluir/excluir con un interruptor, con o sin subcarpetas, reescanear, quitar | Carpetas |
-| Detección facial + agrupado por persona (face-api / TensorFlow.js, modelos incluidos en `vendor/`) | Caras |
-| Poner nombre, unir personas, “No es esta persona”, elegir portada | Caras → persona → foto |
-| Ocultar personas o fotos sin borrarlas, y volver a mostrarlas | Ocultos |
-| **Armar carpetas**: copia las fotos a una carpeta por persona (escritorio: carpeta que elijas · Android: .zip) | Caras |
-| Sensibilidad del agrupado y “Reagrupar sin perder nombres” | Ajustes |
-| Botón Atrás de Android cierra visor → persona → panel | — |
+| Orbe flotante libre (24/30/38 px), con presencia en reposo ajustable, que despliega una ventana compacta hacia el lado con más espacio | Orbe · Ajustes |
+| Álbumes por persona: nombre, portada, unir, “No es esta persona” | Personas |
+| **Buscar** personas por nombre | Personas |
+| **Juntos**: fotos donde aparecen dos o más personas elegidas | Personas → Elegir |
+| **Recuerdo**: presentación a pantalla completa con fundidos y zoom lento | Persona / Juntos |
+| **Línea de tiempo** por mes y **Favoritas** | Fotos |
+| **Duplicadas**: detecta fotos casi iguales y guarda las copias en la bóveda (nada se borra) | Fotos → Duplicadas |
+| **Bóveda con PIN** para personas y fotos ocultas | Bóveda |
+| **Armar carpetas**: copia las fotos a una carpeta por persona | Personas |
+| Tema Sistema / Oscuro / Claro | Ajustes |
+| Orbe sobre otras apps (APK) | Ajustes |
 
-Los originales **nunca** se mueven ni se borran: quitar una carpeta o “Borrar todo el índice” sólo borra datos de Memora.
+> El PIN de la bóveda evita miradas: no cifra los archivos originales.
 
 ## Estructura
 
@@ -27,7 +30,7 @@ src/exporter.js       copia a carpetas (File System Access) o .zip (JSZip)
 src/db.js             IndexedDB local
 src/styles.js         estilos encapsulados
 sw.js                 cache offline (shell en network-first, modelos en cache-first)
-vendor/               face-api 1.7.15 (MIT), JSZip 3.10.1 (MIT/GPLv3), modelos (~6,7 MB)
+vendor/               face-api 1.7.15 (MIT), JSZip 3.10.1 (MIT/GPLv3), modelos (~6,7 MB), fuentes Manrope e Instrument Serif (OFL)
 ```
 
 ## Usarlo dentro de otra app (por ejemplo FEP)

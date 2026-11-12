@@ -1,109 +1,144 @@
-// Memora · galería flotante: burbuja arrastrable + panel con personas por carpeta.
-import { CSS } from './styles.js';
+// Rostra · orbe flotante + ventana compacta. Todo local.
+import { CSS, FONT_FACES } from './styles.js';
 import * as db from './db.js';
 import * as sc from './scanner.js';
 import { exportToFolder, exportToZip, exportToNative } from './exporter.js';
 
 const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
+const VERSION = '2.0';
 
+const sv = (p, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${p}</svg>`;
 const I = {
-  gallery: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h11a2 2 0 0 1 2 2v9"/><rect x="3.5" y="7.5" width="13" height="12" rx="2"/><circle cx="8" cy="11.5" r="1.3" fill="currentColor" stroke="none"/><path d="M3.5 17.5l4-4 3 3 2-2 4 4"/></svg>',
-  face: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="9" cy="10" r=".6" fill="currentColor"/><circle cx="15" cy="10" r=".6" fill="currentColor"/><path d="M9 15c1.6 1.4 4.4 1.4 6 0"/></svg>',
-  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
-  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
-  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.8-3 3-4.6 5.5-4.6s4.7 1.6 5.5 4.6"/><path d="M16 5.2a3 3 0 0 1 0 5.6M17.5 14.6c1.5.6 2.6 2 3 4.4"/></svg>',
-  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
-  folderPlus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/></svg>',
-  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l18 18M10.6 6.1A9.7 9.7 0 0 1 12 6c5 0 8.5 4.5 9 6-.3.8-1.2 2.3-2.7 3.6M6.4 7.6C4.6 8.9 3.4 10.7 3 12c.5 1.5 4 6 9 6 1.5 0 2.9-.4 4-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
-  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12c.5-1.5 4-6 9-6s8.5 4.5 9 6c-.5 1.5-4 6-9 6s-8.5-4.5-9-6z"/><circle cx="12" cy="12" r="3"/></svg>',
-  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
-  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
-  merge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v4a6 6 0 0 0 6 6h0a6 6 0 0 1 6 6M18 4v4a6 6 0 0 1-3 5.2M12 14v6"/></svg>',
-  export: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9.5 13.5 12 16l2.5-2.5"/></svg>',
-  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',
-  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
-  split: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.8-3 3-4.6 5.5-4.6 1.4 0 2.6.4 3.6 1.2M16 14l5 5M21 14l-5 5"/></svg>',
-  star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z"/></svg>',
-  select: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>',
+  gallery: sv('<path d="M7 4h11a2 2 0 0 1 2 2v9"/><rect x="3.5" y="7.5" width="13" height="12" rx="2"/><circle cx="8" cy="11.5" r="1.3" fill="currentColor" stroke="none"/><path d="M3.5 17.5l4-4 3 3 2-2 4 4"/>'),
+  close: sv('<path d="M6 6l12 12M18 6 6 18"/>', 'stroke-width="2"'),
+  back: sv('<path d="M15 5l-7 7 7 7"/>', 'stroke-width="2"'),
+  next: sv('<path d="M9 5l7 7-7 7"/>', 'stroke-width="2"'),
+  people: sv('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.8-3 3-4.6 5.5-4.6s4.7 1.6 5.5 4.6"/><path d="M16 5.2a3 3 0 0 1 0 5.6M17.5 14.6c1.5.6 2.6 2 3 4.4"/>'),
+  photos: sv('<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>'),
+  folder: sv('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  folderPlus: sv('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/>'),
+  lock: sv('<rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>'),
+  gear: sv('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'),
+  check: sv('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.6"'),
+  merge: sv('<path d="M6 4v4a6 6 0 0 0 6 6 6 6 0 0 1 6 6M18 4v4a6 6 0 0 1-3 5.2M12 14v6"/>'),
+  export: sv('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9.5 13.5 12 16l2.5-2.5"/>'),
+  refresh: sv('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>'),
+  trash: sv('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
+  split: sv('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.8-3 3-4.6 5.5-4.6 1.4 0 2.6.4 3.6 1.2M16 14l5 5M21 14l-5 5"/>'),
+  star: sv('<path d="M12 3.6l2.6 5.2 5.7.8-4.1 4 1 5.7L12 16.6l-5.2 2.7 1-5.7-4.1-4 5.7-.8z"/>'),
+  starFill: sv('<path d="M12 3.6l2.6 5.2 5.7.8-4.1 4 1 5.7L12 16.6l-5.2 2.7 1-5.7-4.1-4 5.7-.8z" fill="currentColor"/>'),
+  select: sv('<rect x="4" y="4" width="16" height="16" rx="5"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'),
+  search: sv('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>'),
+  play: sv('<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>'),
+  pause: sv('<path d="M8 5v14M16 5v14"/>', 'stroke-width="2.6"'),
+  together: sv('<circle cx="8.5" cy="12" r="5"/><circle cx="15.5" cy="12" r="5"/>'),
+  copies: sv('<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'),
+  eye: sv('<path d="M3 12c.5-1.5 4-6 9-6s8.5 4.5 9 6c-.5 1.5-4 6-9 6s-8.5-4.5-9-6z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff: sv('<path d="M3 3l18 18M10.6 6.1A9.7 9.7 0 0 1 12 6c5 0 8.5 4.5 9 6-.3.8-1.2 2.3-2.7 3.6M6.4 7.6C4.6 8.9 3.4 10.7 3 12c.5 1.5 4 6 9 6 1.5 0 2.9-.4 4-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'),
+  sparkle: sv('<path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>'),
+  shield: sv('<path d="M12 3.5l7 2.8v5.4c0 4.3-3 7.6-7 8.8-4-1.2-7-4.5-7-8.8V6.3z"/><path d="M9 12l2.2 2.2L15.5 10"/>'),
+  del: sv('<path d="M9 6h11v12H9l-5-6z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/>'),
 };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
-const SIZES = [{ k: 'mini', px: 24, l: 'Mini' }, { k: 'chica', px: 30, l: 'Chica' }, { k: 'media', px: 40, l: 'Media' }];
+const nf = new Intl.NumberFormat('es-AR');
+const plural = (n, a, b) => `${nf.format(n)} ${n === 1 ? a : b}`;
+const SIZES = [{ k: 'mini', px: 24, l: 'Mini' }, { k: 'chica', px: 30, l: 'Chica' }, { k: 'media', px: 38, l: 'Media' }];
+const IDLE = [{ k: 1, l: 'Sólida' }, { k: 0.72, l: 'Suave' }, { k: 0.45, l: 'Discreta' }];
+const THEMES = [{ k: 'system', l: 'Sistema' }, { k: 'dark', l: 'Oscuro' }, { k: 'light', l: 'Claro' }];
+const TABS = [['people', 'Personas', I.people], ['photos', 'Fotos', I.photos], ['sources', 'Carpetas', I.folder], ['vault', 'Bóveda', I.lock], ['settings', 'Ajustes', I.gear]];
+const PAGE = 120;
 
-class Memora {
+async function sha(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`rostra:${text}`));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+const vibrate = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* sin vibración */ } };
+
+class Rostra {
   constructor(host = document.body) {
-    this.hostEl = document.createElement('memora-gallery');
+    this.hostEl = document.createElement('rostra-gallery');
     host.appendChild(this.hostEl);
     this.root = this.hostEl.attachShadow({ mode: 'open' });
-    this.state = { open: false, tab: 'people', view: null, selecting: false, sel: new Set(), scan: null };
+    this.state = { open: false, tab: 'people', view: null, selecting: false, sel: new Set(), scan: null,
+      query: '', filter: 'all', limit: PAGE, vaultOpen: false, pin: '', pinStep: null, pinFirst: '', dupes: null };
     this.urls = []; this.prevUrls = [];
-    this.data = { sources: [], people: [], noFaces: [], hiddenPhotos: [], photos: [] };
+    this.data = { sources: [], people: [], visible: [], noFaces: [], hiddenPhotos: [], photos: [] };
   }
 
   async init() {
+    if (!document.getElementById('rostra-fonts')) {
+      const st = document.createElement('style'); st.id = 'rostra-fonts';
+      st.textContent = FONT_FACES(new URL('../vendor/', import.meta.url).href);
+      document.head.appendChild(st);
+    }
     this.settings = {
       size: await db.getSetting('bubbleSize', 'chica'),
       pos: await db.getSetting('bubblePos', { side: 'right', y: 0.62 }),
       threshold: await db.getSetting('threshold', sc.DEFAULT_THRESHOLD),
+      theme: await db.getSetting('theme', 'system'),
+      idle: await db.getSetting('idle', 1),
+      pinHash: await db.getSetting('pinHash', ''),
     };
     this.root.innerHTML = `<style>${CSS}</style>
-      <button class="bubble" part="bubble" aria-label="Abrir galería" aria-haspopup="dialog">
+      <button class="bubble" part="bubble" aria-label="Abrir Rostra" aria-expanded="false">
         <span class="dot">${I.gallery}
           <svg class="ring" viewBox="0 0 36 36" style="display:none"><circle class="bg" cx="18" cy="18" r="16"/><circle class="fg" cx="18" cy="18" r="16" stroke-dasharray="100.5" stroke-dashoffset="100.5"/></svg>
         </span>
       </button>
       <div class="scrim"></div>
-      <section class="sheet" role="dialog" aria-modal="true" aria-label="Memora, caras por carpeta">
+      <section class="sheet" role="dialog" aria-modal="true" aria-label="Rostra">
         <header class="head">
-          <span class="logo">${I.gallery}</span>
-          <div class="grow"><h2>Memora</h2><p>Caras por carpeta</p></div>
+          <div class="grow"><p class="brand">Rostra<i>.</i></p><p class="stats num"></p></div>
           <button class="iconbtn" data-a="close" aria-label="Cerrar">${I.close}</button>
         </header>
-        <nav class="tabs" role="tablist">
-          ${[['people', 'Caras', I.people], ['sources', 'Carpetas', I.folder], ['hidden', 'Ocultos', I.eyeOff], ['settings', 'Ajustes', I.gear]]
-            .map(([k, l, ic]) => `<button class="tab" role="tab" data-a="tab" data-v="${k}">${ic}${l}</button>`).join('')}
-        </nav>
         <div class="progress" hidden></div>
         <div class="body"></div>
+        <nav class="nav" role="tablist">
+          ${TABS.map(([k, l, ic]) => `<button class="tab" role="tab" data-a="tab" data-v="${k}" aria-label="${l}">${ic}<span>${l}</span></button>`).join('')}
+        </nav>
       </section>
       <input type="file" class="picker" webkitdirectory directory multiple accept="image/*" hidden>
       <div class="toast" role="status" aria-live="polite"></div>`;
     this.$ = (s) => this.root.querySelector(s);
     this.$('.dot svg').classList.add('ico');
     const bubble = this.$('.bubble');
-    bubble.classList.add('dragging'); // primera ubicación sin animación
-    this.applySize();
+    bubble.classList.add('dragging');
+    this.applyTheme(); this.applyIdle(); this.applySize();
     requestAnimationFrame(() => requestAnimationFrame(() => bubble.classList.remove('dragging')));
     this.bindBubble();
     this.root.addEventListener('click', (e) => this.onClick(e));
     this.root.addEventListener('change', (e) => this.onChange(e));
+    this.root.addEventListener('input', (e) => this.onInput(e));
     this.$('.scrim').addEventListener('click', () => this.close());
-    window.addEventListener('popstate', () => { if (this.state.open) this.close(true); });
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.state.open) this.close(); });
+    window.addEventListener('popstate', () => { if (this.state.open && !NATIVE) this.close(true); });
+    window.addEventListener('keydown', (e) => this.onKey(e));
     await this.refresh();
-    if (NATIVE) { this.syncNativePos(); this.open(); } // el APK abre directo la app compacta junto a la burbuja
+    if (NATIVE) { this.syncNativePos(); this.open(); } // el APK abre directo la ventana junto al orbe
   }
 
-  /* ---------- Burbuja ---------- */
+  /* ---------- Apariencia ---------- */
+  applyTheme() {
+    if (this.settings.theme === 'system') this.hostEl.removeAttribute('data-theme');
+    else this.hostEl.setAttribute('data-theme', this.settings.theme);
+  }
+  applyIdle() { this.hostEl.style.setProperty('--idle', String(this.settings.idle)); }
   applySize() {
     const px = (SIZES.find((s) => s.k === this.settings.size) || SIZES[1]).px;
     this.hostEl.style.setProperty('--bubble', `${px}px`);
-    this.root.host.style.setProperty('--bubble', `${px}px`);
     this.bubblePx = px;
     this.placeBubble();
   }
 
+  /* ---------- Orbe ---------- */
   placeBubble(x, y) {
     const b = this.$('.bubble'); const box = this.bubblePx + 14;
     const W = window.innerWidth; const H = window.innerHeight;
     if (x === undefined) {
       const p = this.settings.pos;
-      // posición libre guardada en fracciones de pantalla (compatibilidad con el formato viejo "side")
       x = typeof p.x === 'number' ? p.x * W : (p.side === 'left' ? 2 : W - box - 2);
       y = p.y * H;
     }
-    // libre: sólo se evita que salga de la pantalla
     x = Math.min(Math.max(x, 0), W - box);
     y = Math.min(Math.max(y, 0), H - box);
     b.style.transform = `translate(${x}px, ${y}px)`;
@@ -115,7 +150,7 @@ class Memora {
     const b = this.$('.bubble'); let start = null; let moved = false;
     b.addEventListener('pointerdown', (e) => {
       start = { px: e.clientX, py: e.clientY, x: this.bxy.x, y: this.bxy.y }; moved = false;
-      b.setPointerCapture(e.pointerId);
+      try { b.setPointerCapture(e.pointerId); } catch { /* sin captura */ }
     });
     b.addEventListener('pointermove', (e) => {
       if (!start) return;
@@ -124,59 +159,60 @@ class Memora {
       moved = true; b.classList.add('dragging');
       this.placeBubble(start.x + dx, start.y + dy);
     });
-    const end = async () => {
+    b.addEventListener('pointerup', async () => {
       if (!start) return; start = null; b.classList.remove('dragging');
-      if (!moved) return; // el toque simple abre por 'click' (evita el click fantasma sobre el fondo)
+      if (!moved) return; // el toque simple abre por 'click'
       this.justDragged = true; setTimeout(() => { this.justDragged = false; }, 350);
       this.settings.pos = { x: this.bxy.x / window.innerWidth, y: this.bxy.y / window.innerHeight }; // queda donde la soltás
       if (NATIVE) try { window.MemoraNative.setBubblePos(this.settings.pos.x, this.settings.pos.y); } catch { /* sin puente */ }
+      vibrate(6);
       await db.setSetting('bubblePos', this.settings.pos);
-    };
-    b.addEventListener('pointerup', end);
+    });
     b.addEventListener('pointercancel', () => { start = null; b.classList.remove('dragging'); this.placeBubble(); });
-    b.addEventListener('click', () => { if (this.justDragged) { this.justDragged = false; return; } if (this.state.open) this.close(); else this.open(); });
-    window.addEventListener('resize', () => { this.placeBubble(); if (this.state.open) this.placeSheet(); });
+    b.addEventListener('click', () => {
+      if (this.justDragged) { this.justDragged = false; return; }
+      vibrate(5);
+      if (this.state.open) this.close(); else this.open();
+    });
+    window.addEventListener('resize', () => this.placeBubble());
   }
 
   setRing(frac) {
     const ring = this.$('.ring');
-    ring.style.display = frac == null ? 'none' : ''; // en SVG el atributo hidden no oculta
+    ring.style.display = frac == null ? 'none' : '';
     if (frac != null) ring.querySelector('.fg').style.strokeDashoffset = String(100.5 * (1 - frac));
   }
 
-  /* ---------- Panel ---------- */
+  /* ---------- Ventana ---------- */
   open() {
     if (this.state.open) return;
     this.state.open = true;
-    if (!NATIVE) try { history.pushState({ memora: true }, ''); } catch { /* vista embebida */ } // Atrás cierra el panel
-    this.$('.bubble').classList.add('open');
-    this.$('.bubble').setAttribute('aria-expanded', 'true');
-    this.render();
-    this.placeSheet();
+    if (!NATIVE) try { history.pushState({ rostra: true }, ''); } catch { /* vista embebida */ }
+    const b = this.$('.bubble'); b.classList.add('open'); b.setAttribute('aria-expanded', 'true');
+    this.$('.dot .badge')?.remove();
+    this.render(); this.placeSheet();
     this.$('.scrim').classList.add('on'); this.$('.sheet').classList.add('on');
-    setTimeout(() => this.$('[data-a="close"]').focus(), 50);
   }
 
   close(fromPop = false) {
-    if (this.closeViewer()) { if (fromPop) try { history.pushState({ memora: true }, ''); } catch {} return; }
-    if (this.state.view && fromPop) { this.state.view = null; this.render(); try { history.pushState({ memora: true }, ''); } catch {} return; }
-    this.state.open = false; this.state.view = null; this.state.selecting = false; this.state.sel.clear();
-    this.$('.bubble').classList.remove('open');
-    this.$('.bubble').setAttribute('aria-expanded', 'false');
+    if (this.closeOverlay()) { if (fromPop && !NATIVE) try { history.pushState({ rostra: true }, ''); } catch { /* */ } return; }
+    if (this.state.view && fromPop) { this.state.view = null; this.render(); try { history.pushState({ rostra: true }, ''); } catch { /* */ } return; }
+    Object.assign(this.state, { open: false, view: null, selecting: false, vaultOpen: false, pin: '', pinStep: null });
+    this.state.sel.clear();
+    const b = this.$('.bubble'); b.classList.remove('open'); b.setAttribute('aria-expanded', 'false');
     this.$('.scrim').classList.remove('on'); this.$('.sheet').classList.remove('on');
-    if (NATIVE) { setTimeout(() => { try { window.MemoraNative.minimize(); } catch { /* sin puente */ } }, 220); return; }
-    try { if (!fromPop && history.state?.memora) history.back(); } catch { /* vista embebida */ }
-    this.$('.bubble').focus();
+    if (NATIVE) { setTimeout(() => { try { window.MemoraNative.minimize(); } catch { /* sin puente */ } }, 240); return; }
+    try { if (!fromPop && history.state?.rostra) history.back(); } catch { /* vista embebida */ }
+    b.focus();
   }
 
-  // Panel compacto que se despliega hacia el costado de la burbuja con más espacio.
+  // Ventana compacta que se despliega hacia el lado con más espacio.
   placeSheet() {
     const sh = this.$('.sheet'); if (!sh || !this.bxy) return;
     const W = window.innerWidth; const H = window.innerHeight; const box = this.bubblePx + 14; const gap = 4;
-    const pw = Math.min(320, W - 16); const ph = Math.min(540, H - 16);
+    const pw = Math.min(328, W - 16); const ph = Math.min(560, H - 16);
     const cx = this.bxy.x + box / 2; const cy = this.bxy.y + box / 2;
-    const toRight = cx < W / 2;
-    let left = toRight ? this.bxy.x + box + gap : this.bxy.x - pw - gap;
+    let left = cx < W / 2 ? this.bxy.x + box + gap : this.bxy.x - pw - gap;
     left = Math.min(Math.max(left, 8), W - pw - 8);
     const top = Math.min(Math.max(cy - ph / 2, 8), H - ph - 8);
     Object.assign(sh.style, { left: `${left}px`, top: `${top}px` });
@@ -185,190 +221,365 @@ class Memora {
     sh.style.setProperty('--oy', `${Math.min(Math.max(cy - top, 0), ph)}px`);
   }
 
-  // Botón Atrás de Android (lo llama el APK). Siempre lo maneja la galería.
+  closeOverlay() {
+    if (this.show) { this.stopShow(); return true; }
+    if (this.viewer) { this.closeViewer(); return true; }
+    const dlg = this.root.querySelector('.dialog'); if (dlg) { dlg.dispatchEvent(new Event('dismiss')); return true; }
+    return false;
+  }
+
+  /* ---------- Android ---------- */
   nativeBack() {
-    if (this.closeViewer()) return true;
-    const dlg = this.root.querySelector('.dialog'); if (dlg) { dlg.click(); return true; }
+    if (this.closeOverlay()) return true;
     if (this.state.view) { this.state.view = null; this.render(); return true; }
+    if (this.state.selecting) { this.state.selecting = false; this.state.sel.clear(); this.render(); return true; }
     if (this.state.open) { this.close(); return true; }
     try { window.MemoraNative.minimize(); } catch { /* sin puente */ }
     return true;
   }
-
   syncNativePos() {
     try {
       const [fx, fy] = String(window.MemoraNative.bubblePos()).split(',').map(Number);
       if (Number.isFinite(fx) && Number.isFinite(fy) && fx >= 0) { this.settings.pos = { x: fx, y: fy }; this.placeBubble(); }
     } catch { /* sin puente */ }
   }
+  onNativeResume() { this.syncNativePos(); if (!this.state.open) this.open(); else this.render(); }
 
+  /* ---------- Datos ---------- */
   url(blob) { if (!blob) return ''; const u = URL.createObjectURL(blob); this.urls.push(u); return u; }
 
   async refresh() {
     this.data = await sc.snapshot();
-    const unnamed = this.data.people.filter((p) => !p.hidden && !p.name).length;
-    const b = this.$('.dot'); let badge = b.querySelector('.badge');
-    if (unnamed && !this.state.scan) { if (!badge) { badge = document.createElement('span'); badge.className = 'badge'; b.appendChild(badge); } badge.textContent = unnamed > 9 ? '9+' : unnamed; }
-    else badge?.remove();
+    this.state.dupes = null;
+    const unnamed = this.data.people.filter((p) => !p.hidden && !p.name && p.visibleCount).length;
+    const dot = this.$('.dot'); let badge = dot.querySelector('.badge');
+    if (unnamed && !this.state.scan && !this.state.open) {
+      if (!badge) { badge = document.createElement('span'); badge.className = 'badge num'; dot.appendChild(badge); }
+      badge.textContent = unnamed > 9 ? '9+' : unnamed;
+    } else badge?.remove();
     if (this.state.open) this.render();
   }
 
   render() {
     this.prevUrls.forEach((u) => URL.revokeObjectURL(u)); this.prevUrls = this.urls; this.urls = [];
-    this.root.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.v === this.state.tab && !this.state.view)));
-    const body = this.$('.body');
-    const v = this.state.view;
-    body.innerHTML = v?.type === 'person' ? this.viewPerson(v.id) : this[`tab_${this.state.tab}`]();
+    const { view, tab } = this.state;
+    this.root.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.v === tab)));
+    const people = this.data.people.filter((p) => !p.hidden && p.visibleCount).length;
+    this.$('.stats').textContent = this.data.visible.length
+      ? `${plural(this.data.visible.length, 'foto', 'fotos')} · ${plural(people, 'persona', 'personas')}`
+      : 'Tus personas, en una burbuja';
+    let html;
+    if (view?.type === 'person') html = this.viewPerson(view.id);
+    else if (view?.type === 'together') html = this.viewTogether(view.ids);
+    else html = this[`tab_${tab}`]();
+    this.$('.body').innerHTML = html;
     this.renderProgress();
   }
 
   renderProgress() {
     const el = this.$('.progress'); const s = this.state.scan;
-    el.hidden = !s;
-    if (!s) return;
+    el.hidden = !s; if (!s) return;
     const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-    el.innerHTML = `<div class="txt"><b>${s.phase === 'models' ? 'Preparando detector de caras…' : `Buscando caras · ${pct}%`}</b>
-      <span class="ellipsis">${s.phase === 'models' ? 'Sólo la primera vez (~7 MB, queda guardado)' : `${esc(s.source)} · ${s.done}/${s.total}`}</span>
+    el.innerHTML = `<div class="txt"><b>${s.phase === 'models' ? 'Preparando el reconocimiento…' : `${esc(s.label || 'Buscando caras')} · <span class="num">${pct}%</span>`}</b>
+      <span class="ellipsis num">${s.phase === 'models' ? 'Sólo la primera vez · queda guardado' : `${esc(s.source)} · ${nf.format(s.done)} de ${nf.format(s.total)}`}</span>
       <div class="bar"><i style="width:${pct}%"></i></div></div>
-      <button class="btn" data-a="cancel-scan" style="height:36px">Frenar</button>`;
+      ${s.label ? '' : '<button class="stop" data-a="cancel-scan">Frenar</button>'}`;
   }
 
-  /* ---------- Pestañas ---------- */
+  /* ---------- Personas ---------- */
   tab_people() {
-    const { sources, people, noFaces } = this.data;
+    const { sources, people } = this.data;
     if (!sources.length) {
-      return `${this.overlayBanner()}<div class="empty"><div class="art">${I.folderPlus}</div><h3>Elegí qué carpetas mirar</h3>
-        <p class="note">Memora sólo lee las carpetas que vos agregues. Detecta las caras en tu dispositivo y arma una carpeta por persona. No se sube nada.</p>
-        <button class="btn primary block" data-a="add-source">${I.folderPlus}Agregar carpeta</button></div>`;
+      return `${this.overlayBanner()}<div class="empty"><div class="art">${I.gallery}</div>
+        <h3>Tus personas, ordenadas solas</h3>
+        <p class="note">Elegí las carpetas que quieras. Rostra reconoce cada cara y arma su álbum, sin subir nada a internet.</p>
+        <ul class="perks">
+          <li>${I.people}<span><b>Álbumes por persona</b> con nombre, portada y recuerdos.</span></li>
+          <li>${I.together}<span><b>Juntos</b>: las fotos donde aparecen dos o más personas.</span></li>
+          <li>${I.lock}<span><b>Bóveda con PIN</b> para lo que no querés a la vista.</span></li>
+        </ul>
+        <button class="btn primary block" data-a="add-source">${I.folderPlus}Elegir una carpeta</button></div>`;
     }
     const visible = people.filter((p) => !p.hidden && p.visibleCount);
-    const banner = this.overlayBanner();
     if (!visible.length) {
-      return `<div class="empty"><div class="art">${I.face}</div><h3>${this.state.scan ? 'Buscando caras…' : 'Todavía no hay caras'}</h3>
-        <p class="note">${this.state.scan ? 'Van a ir apareciendo acá.' : 'Escaneá tus carpetas incluidas para agrupar a las personas.'}</p>
+      return `${this.overlayBanner()}<div class="empty"><div class="art">${I.people}</div>
+        <h3>${this.state.scan ? 'Reconociendo caras…' : 'Todavía no hay caras'}</h3>
+        <p class="note">${this.state.scan ? 'Van a ir apareciendo acá a medida que avance.' : 'Escaneá tus carpetas para agrupar a las personas.'}</p>
         ${this.state.scan ? '' : `<button class="btn primary block" data-a="scan">${I.refresh}Buscar caras</button>`}</div>`;
     }
     const { selecting, sel } = this.state;
-    const grid = visible.map((p) => `
-      <button class="person ${sel.has(p.id) ? 'sel' : ''}" data-a="${selecting ? 'toggle-sel' : 'open-person'}" data-v="${p.id}">
-        <img class="face" alt="" src="${this.url(p.cover?.thumb)}">
+    return `${this.overlayBanner()}
+      <label class="search">${I.search}<input type="search" data-a="query" placeholder="Buscar persona" value="${esc(this.state.query)}" aria-label="Buscar persona" enterkeyhint="search"></label>
+      <div class="row" style="margin-bottom:16px">
+        ${selecting
+          ? `<button class="btn ghost" data-a="sel-cancel">${I.close}Listo</button>`
+          : `<button class="btn primary" data-a="export-all">${I.export}Armar carpetas</button>
+             <button class="btn ghost" data-a="sel-start">${I.select}Elegir</button>`}
+      </div>
+      <div class="people" id="pgrid">${this.peopleGrid()}</div>
+      ${selecting && sel.size ? `<div class="selbar"><span class="n num">${plural(sel.size, 'elegida', 'elegidas')}</span>
+        <button class="btn ghost" data-a="sel-hide" aria-label="Guardar en la bóveda">${I.lock}</button>
+        <button class="btn ghost" data-a="sel-merge" ${sel.size < 2 ? 'disabled' : ''}>${I.merge}Unir</button>
+        <button class="btn primary" data-a="sel-together" ${sel.size < 2 ? 'disabled' : ''}>${I.together}Juntos</button></div>` : ''}`;
+  }
+
+  peopleGrid() {
+    const q = this.state.query.trim().toLowerCase();
+    const list = this.data.people.filter((p) => !p.hidden && p.visibleCount && (!q || (p.name || 'sin nombre').toLowerCase().includes(q)));
+    if (!list.length) return `<p class="note" style="grid-column:1/-1;text-align:center;padding:20px 0">Nadie con ese nombre.</p>`;
+    const { selecting, sel } = this.state;
+    return list.map((p) => `
+      <button class="person ${p.name ? 'named' : ''} ${sel.has(p.id) ? 'sel' : ''}" data-a="${selecting ? 'toggle-sel' : 'open-person'}" data-v="${p.id}">
+        <img class="avatar" alt="" src="${this.url(p.cover?.thumb)}">
         ${selecting ? `<span class="check">${sel.has(p.id) ? I.check : ''}</span>` : ''}
         <span class="nm ${p.name ? '' : 'unnamed'}">${esc(p.name || 'Sin nombre')}</span>
-        <span class="ct">${plural(p.visibleCount, 'foto', 'fotos')}</span>
+        <span class="ct num">${plural(p.visibleCount, 'foto', 'fotos')}</span>
       </button>`).join('');
-    return `${banner}
-      <div class="toolbar">
-        ${selecting
-          ? `<button class="btn" data-a="sel-cancel">${I.close}Listo</button>`
-          : `<button class="btn primary" data-a="export-all">${I.export}Armar carpetas</button>
-             <button class="btn" data-a="sel-start" aria-label="Seleccionar varias">${I.select}Elegir</button>`}
-      </div>
-      <div class="people">${grid}</div>
-      ${noFaces.length ? `<p class="note small" style="margin-top:16px">${plural(noFaces.length, 'foto sin caras', 'fotos sin caras')} (quedan fuera de las carpetas).</p>` : ''}
-      ${selecting && sel.size ? `<div class="selbar"><span class="n">${plural(sel.size, 'seleccionada', 'seleccionadas')}</span>
-        <button class="btn" data-a="sel-hide">${I.eyeOff}Ocultar</button>
-        <button class="btn primary" data-a="sel-merge" ${sel.size < 2 ? 'disabled' : ''}>${I.merge}Unir</button></div>` : ''}`;
+  }
+
+  photoCell(photo, face, ctx) {
+    return `<button class="ph" data-a="view" data-ctx="${ctx}" data-v="${photo.id}" ${face ? `data-f="${face.id}"` : ''} aria-label="${esc(photo.name)}">
+      <img loading="lazy" decoding="async" alt="" src="${this.url(photo.thumb)}">${photo.fav ? `<span class="fav">${I.starFill}</span>` : ''}</button>`;
   }
 
   viewPerson(id) {
     const p = this.data.people.find((x) => x.id === id);
     if (!p) { this.state.view = null; return this.tab_people(); }
     const items = p.items.filter((i) => !i.photo.hidden);
+    const favs = items.filter((i) => i.photo.fav).length;
+    this.ctxList = items;
     return `
-      <div class="detail-head">
-        <button class="iconbtn" data-a="back" aria-label="Volver">${I.back}</button>
-        <img class="face" alt="" src="${this.url(p.cover?.thumb)}">
-        <input class="name-in" data-a="rename" data-v="${p.id}" value="${esc(p.name)}" placeholder="¿Quién es?" maxlength="40" enterkeyhint="done" aria-label="Nombre de la persona">
+      <div class="hero">
+        <button class="iconbtn back" data-a="back" aria-label="Volver">${I.back}</button>
+        <img class="avatar" alt="" src="${this.url(p.cover?.thumb)}">
+        <input class="name-in" data-a="rename" data-v="${p.id}" value="${esc(p.name)}" placeholder="¿Quién es?" maxlength="40" enterkeyhint="done" aria-label="Nombre">
+        <p class="sub num">${plural(items.length, 'foto', 'fotos')}${favs ? ` · ${plural(favs, 'favorita', 'favoritas')}` : ''}</p>
       </div>
-      <div class="chips">
-        <button class="chip" data-a="export-one" data-v="${p.id}">${I.export}Exportar carpeta</button>
-        <button class="chip" data-a="merge-into" data-v="${p.id}">${I.merge}Unir con…</button>
-        <button class="chip" data-a="hide-person" data-v="${p.id}">${I.eyeOff}Ocultar</button>
+      <div class="actions">
+        <button class="act" data-a="memory" data-v="${p.id}"><span class="i">${I.play}</span>Recuerdo</button>
+        <button class="act" data-a="export-one" data-v="${p.id}"><span class="i">${I.export}</span>Exportar</button>
+        <button class="act" data-a="merge-into" data-v="${p.id}"><span class="i">${I.merge}</span>Unir</button>
+        <button class="act" data-a="hide-person" data-v="${p.id}"><span class="i">${I.lock}</span>Bóveda</button>
       </div>
-      <p class="section-t">${plural(items.length, 'foto', 'fotos')}${p.items.length - items.length ? ` · ${p.items.length - items.length} oculta(s)` : ''}</p>
-      <div class="photos">${items.map((i) => `<button class="ph" data-a="view" data-v="${i.photo.id}" data-f="${i.face.id}" aria-label="${esc(i.photo.name)}"><img loading="lazy" alt="" src="${this.url(i.photo.thumb)}"></button>`).join('')}</div>`;
+      <div class="photos">${items.map((i) => this.photoCell(i.photo, i.face, 'person')).join('')}</div>`;
   }
 
+  viewTogether(ids) {
+    const ppl = ids.map((id) => this.data.people.find((p) => p.id === id)).filter(Boolean);
+    const items = sc.together(this.data.people, ids);
+    this.ctxList = items.map((i) => ({ photo: i.photo }));
+    const names = ppl.map((p) => p.name || 'Sin nombre');
+    return `
+      <div class="hero">
+        <button class="iconbtn back" data-a="back" aria-label="Volver">${I.back}</button>
+        <div class="faces-stack">${ppl.slice(0, 4).map((p) => `<img alt="" src="${this.url(p.cover?.thumb)}">`).join('')}</div>
+        <p class="brand" style="font-size:26px;margin-top:10px">Juntos</p>
+        <p class="sub">${esc(names.join(' + '))} · <span class="num">${plural(items.length, 'foto', 'fotos')}</span></p>
+      </div>
+      ${items.length
+        ? `<div class="actions" style="grid-template-columns:1fr 1fr"><button class="act" data-a="memory-together"><span class="i">${I.play}</span>Recuerdo</button>
+           <button class="act" data-a="export-together"><span class="i">${I.export}</span>Exportar</button></div>
+           <div class="photos">${items.map((i) => this.photoCell(i.photo, null, 'list')).join('')}</div>`
+        : '<p class="note" style="text-align:center;padding:24px 8px">Todavía no hay fotos donde aparezcan juntos.</p>'}`;
+  }
+
+  /* ---------- Fotos ---------- */
+  tab_photos() {
+    const { visible, noFaces } = this.data;
+    if (!visible.length) {
+      return `<div class="empty"><div class="art">${I.photos}</div><h3>Tu línea de tiempo</h3>
+        <p class="note">Cuando agregues una carpeta, tus fotos aparecen acá ordenadas por mes.</p>
+        <button class="btn primary block" data-a="add-source">${I.folderPlus}Elegir una carpeta</button></div>`;
+    }
+    const f = this.state.filter;
+    const favs = visible.filter((p) => p.fav);
+    const chips = [['all', 'Todas', I.photos], ['fav', `Favoritas${favs.length ? ` ${favs.length}` : ''}`, I.star], ['dupes', 'Duplicadas', I.copies], ['nofaces', 'Sin caras', I.gallery]]
+      .map(([k, l, ic]) => `<button class="chip" data-a="filter" data-v="${k}" aria-pressed="${f === k}">${ic}${l}</button>`).join('');
+    let content;
+    if (f === 'dupes') content = this.dupesView();
+    else {
+      const list = f === 'fav' ? favs : f === 'nofaces' ? noFaces : visible;
+      this.ctxList = list.map((p) => ({ photo: p }));
+      content = list.length ? this.timeline(list) : `<p class="note" style="text-align:center;padding:28px 8px">${f === 'fav' ? 'Tocá la estrella en una foto para tenerla acá.' : 'Nada por acá.'}</p>`;
+    }
+    return `<div class="chips">${chips}</div>${content}`;
+  }
+
+  timeline(list) {
+    const shown = list.slice(0, this.state.limit);
+    const fmt = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' });
+    const groups = [];
+    for (const p of shown) {
+      const key = fmt.format(new Date(p.lastModified || p.scannedAt));
+      if (!groups.length || groups.at(-1).key !== key) groups.push({ key, items: [] });
+      groups.at(-1).items.push(p);
+    }
+    return groups.map((g) => `<div class="month"><h4>${esc(g.key.charAt(0).toUpperCase() + g.key.slice(1))}</h4><span class="num">${nf.format(g.items.length)}</span></div>
+      <div class="photos">${g.items.map((p) => this.photoCell(p, null, 'list')).join('')}</div>`).join('')
+      + (list.length > shown.length ? `<button class="btn ghost block" style="margin-top:14px" data-a="more">Ver ${nf.format(Math.min(PAGE, list.length - shown.length))} más</button>` : '');
+  }
+
+  dupesView() {
+    if (!this.state.dupes) {
+      if (!this.dupesBusy) {
+        this.dupesBusy = true;
+        sc.ensureHashes().then(async (n) => {
+          if (n) this.data = await sc.snapshot();
+          this.state.dupes = sc.findDuplicates(this.data.visible);
+          this.dupesBusy = false;
+          if (this.state.open && this.state.tab === 'photos' && this.state.filter === 'dupes') this.render();
+        }).catch(() => { this.dupesBusy = false; });
+      }
+      return '<p class="note" style="text-align:center;padding:28px 8px">Comparando fotos…</p>';
+    }
+    const groups = this.state.dupes;
+    if (!groups.length) return `<div class="empty" style="padding-top:8px"><div class="art">${I.check}</div><h3>Sin duplicadas</h3><p class="note">No encontramos fotos repetidas en tus carpetas.</p></div>`;
+    const extra = groups.reduce((n, g) => n + g.length - 1, 0);
+    return `<p class="note" style="margin-bottom:12px">${plural(groups.length, 'grupo', 'grupos')} de fotos casi iguales. Se conserva la de mejor calidad (marcada) y las copias van a la bóveda: nada se borra.</p>
+      <button class="btn primary block" style="margin-bottom:14px" data-a="dupes-all">${I.copies}Guardar ${plural(extra, 'copia', 'copias')} en la bóveda</button>
+      ${groups.map((g, i) => `<div class="dupe"><div class="strip">${g.slice(0, 4).map((p, j) => `<img class="${j === 0 ? 'keep' : ''}" alt="" src="${this.url(p.thumb)}">`).join('')}</div>
+        <div class="meta"><p class="num">${plural(g.length, 'foto', 'fotos')} · ${esc(g[0].name)}</p><button class="btn ghost" data-a="dupes-one" data-v="${i}">Ordenar</button></div></div>`).join('')}`;
+  }
+
+  /* ---------- Carpetas ---------- */
   tab_sources() {
     const { sources } = this.data;
     const rows = sources.map((s) => {
       const needs = s._access && s._access !== 'granted';
-      return `<div class="src ${s.enabled ? '' : 'off'}">
-        <span class="fi">${I.folder}</span>
-        <div class="info"><p class="t">${esc(s.name)}</p>
-          <p class="s ${needs ? 'warn' : ''}">${needs ? (s.kind === 'input' ? 'Volvé a elegirla para escanear' : 'Tocá “Dar acceso” para escanear') : `${plural(s.photoCount || 0, 'foto', 'fotos')}${s.lastScan ? ` · ${new Date(s.lastScan).toLocaleDateString('es-AR')}` : ' · sin escanear'}`}</p></div>
-        <button class="switch" role="switch" aria-checked="${s.enabled}" aria-label="Incluir ${esc(s.name)}" data-a="toggle-src" data-v="${s.id}"></button>
-      </div>
-      <div class="src-actions">
-        ${needs ? (s.kind === 'input' ? `<button class="chip on" data-a="add-source">${I.folderPlus}Volver a elegir</button>` : `<button class="chip on" data-a="grant" data-v="${s.id}">${I.check}Dar acceso</button>`) : `<button class="chip" data-a="scan-one" data-v="${s.id}" ${s.enabled ? '' : 'disabled'}>${I.refresh}Escanear</button>`}
-        <button class="chip" data-a="toggle-rec" data-v="${s.id}">${s.recursive ? I.check : ''}Subcarpetas</button>
-        <button class="chip" data-a="remove-src" data-v="${s.id}">${I.trash}Quitar</button>
-      </div>`;
+      return `<div class="group"><div class="item ${s.enabled ? '' : 'off'}">
+        <span class="ic">${I.folder}</span>
+        <div class="tx"><p class="t">${esc(s.name)}</p>
+          <p class="s num ${needs ? 'warn' : ''}">${needs ? (s.kind === 'input' ? 'Volvé a elegirla para escanear' : 'Falta dar acceso') : `${plural(s.photoCount || 0, 'foto', 'fotos')}${s.lastScan ? ` · ${new Date(s.lastScan).toLocaleDateString('es-AR')}` : ' · sin escanear'}`}</p></div>
+        <button class="switch" role="switch" aria-checked="${s.enabled}" aria-label="Incluir ${esc(s.name)}" data-a="toggle-src" data-v="${s.id}"></button></div>
+        <div class="mini-actions">
+          ${needs ? (s.kind === 'input' ? `<button class="chip" aria-pressed="true" data-a="add-source">${I.folderPlus}Volver a elegir</button>` : `<button class="chip" aria-pressed="true" data-a="grant" data-v="${s.id}">${I.check}Dar acceso</button>`)
+            : `<button class="chip" data-a="scan-one" data-v="${s.id}" ${s.enabled ? '' : 'disabled'}>${I.refresh}Escanear</button>`}
+          <button class="chip" data-a="toggle-rec" data-v="${s.id}" aria-pressed="${s.recursive}">Subcarpetas</button>
+          <button class="chip" data-a="remove-src" data-v="${s.id}">${I.trash}Quitar</button>
+        </div></div>`;
     }).join('');
-    return `
-      <p class="note" style="margin-bottom:14px">Sólo se leen las carpetas de esta lista. Apagá una para que sus caras desaparezcan de la galería sin borrar nada.</p>
+    return `<p class="note" style="margin:2px 2px 14px">Rostra sólo mira las carpetas de esta lista. Apagá una para sacarla de la vista sin borrar nada.</p>
       ${rows}
-      <div class="row-btns" style="margin-top:6px">
-        <button class="btn primary" data-a="add-source">${I.folderPlus}Agregar carpeta</button>
-        ${sources.length ? `<button class="btn" data-a="scan" ${this.state.scan ? 'disabled' : ''}>${I.refresh}Escanear todo</button>` : ''}
+      <div class="row" style="margin-top:4px">
+        <button class="btn primary" data-a="add-source">${I.folderPlus}Agregar</button>
+        ${sources.length ? `<button class="btn ghost" data-a="scan" ${this.state.scan ? 'disabled' : ''}>${I.refresh}Escanear todo</button>` : ''}
       </div>
-      <p class="note small" style="margin-top:12px">Quitar una carpeta sólo borra su índice en Memora. Tus fotos originales no se tocan nunca.</p>`;
+      <p class="note small" style="margin:14px 2px 0">Quitar una carpeta borra sólo su índice en Rostra. Tus fotos originales no se tocan nunca.</p>`;
   }
 
-  tab_hidden() {
+  /* ---------- Bóveda ---------- */
+  tab_vault() {
+    const st = this.state;
+    if (!this.settings.pinHash) {
+      if (st.pinStep !== 'set' && st.pinStep !== 'confirm') st.pinStep = 'set';
+      return this.keypadView(st.pinStep === 'set' ? 'Creá tu PIN' : 'Repetilo', 'Cuatro números para abrir la bóveda. Lo que guardes acá queda fuera de la galería y de las exportaciones.');
+    }
+    if (!st.vaultOpen) { st.pinStep = 'unlock'; return this.keypadView('Bóveda', 'Ingresá tu PIN'); }
     const hp = this.data.people.filter((p) => p.hidden);
     const ph = this.data.hiddenPhotos;
-    if (!hp.length && !ph.length) {
-      return `<div class="empty"><div class="art">${I.eye}</div><h3>No ocultaste nada</h3>
-        <p class="note">Lo que ocultes queda guardado acá, fuera de la galería y de las carpetas exportadas. Lo podés volver a mostrar cuando quieras.</p></div>`;
-    }
-    return `
-      ${hp.length ? `<p class="section-t">Personas ocultas</p><div class="people">${hp.map((p) => `
-        <button class="person" data-a="show-person" data-v="${p.id}"><img class="face" alt="" src="${this.url(p.cover?.thumb)}">
+    return `<div class="row" style="margin-bottom:6px"><button class="btn ghost" data-a="vault-lock">${I.lock}Cerrar bóveda</button></div>
+      ${!hp.length && !ph.length ? `<div class="empty"><div class="art">${I.shield}</div><h3>Bóveda vacía</h3><p class="note">Desde una persona o una foto, tocá “Bóveda” para guardarla acá.</p></div>` : ''}
+      ${hp.length ? `<p class="eyebrow">Personas</p><div class="people">${hp.map((p) => `
+        <button class="person" data-a="show-person" data-v="${p.id}"><img class="avatar" alt="" src="${this.url(p.cover?.thumb)}">
         <span class="nm ${p.name ? '' : 'unnamed'}">${esc(p.name || 'Sin nombre')}</span><span class="ct">Tocá para mostrar</span></button>`).join('')}</div>` : ''}
-      ${ph.length ? `<p class="section-t" style="margin-top:20px">Fotos ocultas · tocá para mostrar</p><div class="photos">${ph.map((p) => `
+      ${ph.length ? `<p class="eyebrow">Fotos · tocá para devolverlas</p><div class="photos">${ph.map((p) => `
         <button class="ph" data-a="show-photo" data-v="${p.id}" aria-label="Mostrar ${esc(p.name)}"><img loading="lazy" alt="" src="${this.url(p.thumb)}"><span class="hid">${I.eye}</span></button>`).join('')}</div>` : ''}`;
   }
 
+  keypadView(title, sub) {
+    const n = this.state.pin.length;
+    return `<div class="vault"><div class="lock">${I.lock}</div><h3>${esc(title)}</h3><p class="note">${esc(sub)}</p>
+      <div class="pins" aria-label="${n} de 4">${[0, 1, 2, 3].map((i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => `<button class="key num" data-a="key" data-v="${d}">${d}</button>`).join('')}
+        <span></span><button class="key num" data-a="key" data-v="0">0</button><button class="key ghost" data-a="key-del" aria-label="Borrar">${I.del}</button></div></div>`;
+  }
+
+  async onKey(e) {
+    if (!this.state.open) return;
+    if (e.key === 'Escape') { if (!this.closeOverlay()) this.close(); return; }
+    if (this.show && e.key === ' ') { e.preventDefault(); this.toggleShow(); return; }
+    if (this.viewer && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { this.stepViewer(e.key === 'ArrowRight' ? 1 : -1); return; }
+    const inInput = e.composedPath()[0]?.tagName === 'INPUT';
+    if (!inInput && this.state.tab === 'vault' && this.state.pinStep && /^[0-9]$/.test(e.key) && !this.state.view) this.pressKey(e.key);
+  }
+
+  async pressKey(d) {
+    const st = this.state;
+    if (st.pin.length >= 4 || this.pinBusy) return;
+    st.pin += d; vibrate(4); this.render();
+    if (st.pin.length < 4) return;
+    this.pinBusy = true;
+    try {
+      const pin = st.pin;
+      await new Promise((r) => setTimeout(r, 140));
+      if (st.pinStep === 'set') { st.pinFirst = pin; st.pin = ''; st.pinStep = 'confirm'; return this.render(); }
+      if (st.pinStep === 'confirm') {
+        if (pin !== st.pinFirst) { st.pin = ''; st.pinStep = 'set'; this.shake(); return this.toast('No coincide. Probá de nuevo'); }
+        this.settings.pinHash = await sha(pin); await db.setSetting('pinHash', this.settings.pinHash);
+        st.pin = ''; st.pinStep = null; st.vaultOpen = true; this.toast('Bóveda lista'); return this.render();
+      }
+      if (st.pinStep === 'unlock') {
+        if ((await sha(pin)) === this.settings.pinHash) { st.pin = ''; st.pinStep = null; st.vaultOpen = true; vibrate(10); return this.render(); }
+        st.pin = ''; this.shake(); this.toast('PIN incorrecto');
+      }
+    } finally { this.pinBusy = false; }
+  }
+  shake() { this.render(); this.$('.pins')?.classList.add('shake'); vibrate([20, 40, 20]); }
+
+  /* ---------- Ajustes ---------- */
   tab_settings() {
     const t = this.settings.threshold;
+    const seg = (list, cur, a) => `<div class="seg">${list.map((o) => `<button aria-pressed="${o.k === cur}" data-a="${a}" data-v="${o.k}">${o.l}</button>`).join('')}</div>`;
     return `
-      <div class="setting"><p class="t">Tamaño de la burbuja</p><p class="note small">Movela a donde quieras; se queda justo donde la soltás.</p>
-        <div class="seg">${SIZES.map((s) => `<button aria-pressed="${s.k === this.settings.size}" data-a="size" data-v="${s.k}"><i style="width:${Math.round(s.px / 2.6)}px;height:${Math.round(s.px / 2.6)}px"></i>${s.l} · ${s.px}px</button>`).join('')}</div></div>
-      ${NATIVE ? this.overlaySetting() : ''}
-      <div class="setting"><p class="t">Cómo agrupa las caras</p>
-        <p class="note small">Más estricto separa más; más flexible junta más (y puede mezclar parecidos).</p>
-        <input type="range" min="0.38" max="0.62" step="0.02" value="${t}" data-a="threshold" aria-label="Sensibilidad de agrupado">
-        <div class="range-l"><span>Estricto</span><span>${t.toFixed(2)}</span><span>Flexible</span></div>
-        <button class="btn block" style="margin-top:10px" data-a="regroup">${I.refresh}Reagrupar sin perder nombres</button></div>
-      <div class="setting"><p class="t">Privacidad</p>
-        <p class="note small">La detección corre en este dispositivo. Las miniaturas y huellas faciales se guardan sólo en este navegador. No hay servidor.</p>
-        <button class="btn danger block" style="margin-top:10px" data-a="wipe">${I.trash}Borrar todo el índice</button></div>`;
+      <p class="eyebrow">Apariencia</p>
+      <div class="group"><div class="item stack"><div class="tx"><p class="t">Tema</p></div>${seg(THEMES, this.settings.theme, 'theme')}</div></div>
+      <p class="eyebrow">Orbe flotante</p>
+      <div class="group">
+        <div class="item stack"><div class="tx"><p class="t">Tamaño</p><p class="s">Movelo a donde quieras: se queda donde lo soltás.</p></div>${seg(SIZES.map((s) => ({ k: s.k, l: `${s.l} · ${s.px}` })), this.settings.size, 'size')}</div>
+        <div class="item stack"><div class="tx"><p class="t">Presencia en reposo</p></div>${seg(IDLE, this.settings.idle, 'idle')}</div>
+        ${NATIVE ? this.overlayItem() : ''}
+      </div>
+      <p class="eyebrow">Reconocimiento</p>
+      <div class="group"><div class="item stack"><div class="tx"><p class="t">Cómo agrupa las caras</p><p class="s">Estricto separa más · flexible junta más.</p></div>
+        <input type="range" min="0.38" max="0.62" step="0.02" value="${t}" data-a="threshold" aria-label="Sensibilidad">
+        <div class="range-l num"><span>Estricto</span><span>${t.toFixed(2)}</span><span>Flexible</span></div>
+        <button class="btn ghost block" data-a="regroup">${I.refresh}Reagrupar sin perder nombres</button></div></div>
+      <p class="eyebrow">Privacidad</p>
+      <div class="group">
+        <div class="item"><span class="ic">${I.shield}</span><div class="tx"><p class="t">100% en tu dispositivo</p><p class="s">Sin cuentas, sin nube, sin servidores.</p></div></div>
+        <div class="item"><span class="ic">${I.lock}</span><div class="tx"><p class="t">PIN de la bóveda</p><p class="s">${this.settings.pinHash ? 'Activo · evita miradas, no cifra archivos' : 'Sin configurar'}</p></div>
+          ${this.settings.pinHash ? '<button class="chip" data-a="pin-reset">Cambiar</button>' : ''}</div>
+        <div class="item"><span class="ic">${I.trash}</span><div class="tx"><p class="t">Borrar todo el índice</p><p class="s">Tus fotos originales quedan intactas.</p></div>
+          <button class="chip" data-a="wipe">Borrar</button></div>
+      </div>
+      <p class="note small" style="text-align:center;margin-top:18px">Rostra ${VERSION} · hecho para quedarse en tu teléfono</p>`;
+  }
+
+  overlayItem() {
+    let on = false; let can = false;
+    try { on = window.MemoraNative.overlayEnabled(); can = window.MemoraNative.canOverlay(); } catch { /* */ }
+    return `<div class="item"><div class="tx"><p class="t">Sobre otras apps</p>
+      <p class="s">${on && !can ? 'Falta el permiso de Android' : 'El orbe queda flotando cuando salís'}</p></div>
+      <button class="switch" role="switch" aria-checked="${on && can}" aria-label="Orbe sobre otras apps" data-a="overlay"></button></div>`;
   }
 
   overlayBanner() {
     if (!NATIVE) return '';
     try { if (window.MemoraNative.canOverlay()) return ''; } catch { return ''; }
-    return `<div class="banner"><p>Para tener la burbuja encima de otras apps, Android pide un permiso.</p>
-      <button class="btn primary" data-a="overlay-on">Activar</button></div>`;
-  }
-
-  overlaySetting() {
-    let on = false; let can = false;
-    try { on = window.MemoraNative.overlayEnabled(); can = window.MemoraNative.canOverlay(); } catch { /* sin puente */ }
-    const active = on && can;
-    return `<div class="setting" style="display:flex;align-items:center;gap:12px">
-        <div style="flex:1;min-width:0"><p class="t">Burbuja sobre otras apps</p>
-        <p class="note small">${on && !can ? 'Falta el permiso “Mostrar sobre otras apps”. Tocá el interruptor para darlo.' : 'Cuando salís de Memora, la burbuja queda flotando encima de cualquier app.'}</p></div>
-        <button class="switch" role="switch" aria-checked="${active}" aria-label="Burbuja sobre otras apps" data-a="overlay"></button></div>`;
-  }
-
-  onNativeResume() {
-    this.syncNativePos();
-    if (!this.state.open) this.open(); else this.render();
+    return `<div class="banner"><p>Dejá el orbe flotando sobre cualquier app.</p><button class="btn primary" data-a="overlay-on">Activar</button></div>`;
   }
 
   /* ---------- Eventos ---------- */
+  onInput(e) {
+    const t = e.composedPath()[0];
+    if (t.dataset?.a === 'query') {
+      this.state.query = t.value;
+      const grid = this.$('#pgrid');
+      if (grid) { this.prevUrls.forEach((u) => URL.revokeObjectURL(u)); this.prevUrls = this.urls; this.urls = []; grid.innerHTML = this.peopleGrid(); }
+    }
+    if (t.dataset?.a === 'threshold') { const lbl = this.root.querySelector('.range-l span:nth-child(2)'); if (lbl) lbl.textContent = Number(t.value).toFixed(2); }
+  }
+
   async onChange(e) {
     const t = e.composedPath()[0];
     if (t.classList?.contains('picker')) {
@@ -376,14 +587,12 @@ class Memora {
       t.value = '';
       if (!files.length) return this.toast('Esa carpeta no tiene fotos compatibles');
       const src = await sc.addSourceFromFiles(files);
-      this.toast(`Carpeta “${src.name}” agregada`);
+      this.toast(`“${src.name}” agregada`);
       await this.refresh(); this.startScan([src.id]);
       return;
     }
     if (t.dataset?.a === 'rename') { await sc.renamePerson(t.dataset.v, t.value); await this.refresh(); this.toast('Nombre guardado'); }
-    if (t.dataset?.a === 'threshold') {
-      this.settings.threshold = Number(t.value); await db.setSetting('threshold', this.settings.threshold); this.render();
-    }
+    if (t.dataset?.a === 'threshold') { this.settings.threshold = Number(t.value); await db.setSetting('threshold', this.settings.threshold); }
   }
 
   async onClick(e) {
@@ -394,7 +603,7 @@ class Memora {
     try {
       switch (a) {
         case 'close': return this.close();
-        case 'tab': S.tab = v; S.view = null; S.selecting = false; S.sel.clear(); return this.render();
+        case 'tab': Object.assign(S, { tab: v, view: null, selecting: false, limit: PAGE }); S.sel.clear(); if (v !== 'vault') S.pin = ''; this.$('.body').scrollTop = 0; return this.render();
         case 'back': S.view = null; return this.render();
         case 'add-source': return this.addSource();
         case 'scan': return this.startScan();
@@ -405,41 +614,57 @@ class Memora {
         case 'toggle-rec': { const s = this.data.sources.find((x) => x.id === v); await sc.setSource(v, { recursive: !s.recursive }); this.toast(s.recursive ? 'Sólo la carpeta principal' : 'Incluye subcarpetas · volvé a escanear'); return this.refreshSources(); }
         case 'remove-src': {
           const s = this.data.sources.find((x) => x.id === v);
-          if (!(await this.confirm(`¿Quitar “${s.name}”?`, 'Se borra su índice en Memora. Tus fotos originales no se tocan.', 'Quitar'))) return;
+          if (!(await this.confirm(`¿Quitar “${s.name}”?`, 'Se borra su índice en Rostra. Tus fotos originales no se tocan.', 'Quitar'))) return;
           await sc.removeSource(v); this.toast('Carpeta quitada'); return this.refreshSources();
         }
         case 'open-person': S.view = { type: 'person', id: v }; this.$('.body').scrollTop = 0; return this.render();
         case 'sel-start': S.selecting = true; S.sel.clear(); return this.render();
         case 'sel-cancel': S.selecting = false; S.sel.clear(); return this.render();
-        case 'toggle-sel': S.sel.has(v) ? S.sel.delete(v) : S.sel.add(v); return this.render();
-        case 'sel-hide': for (const id of S.sel) await sc.setPersonHidden(id, true); this.toast(`${plural(S.sel.size, 'persona oculta', 'personas ocultas')}`); S.selecting = false; S.sel.clear(); return this.refresh();
+        case 'toggle-sel': vibrate(4); if (S.sel.has(v)) S.sel.delete(v); else S.sel.add(v); return this.render();
+        case 'sel-hide': for (const id of S.sel) await sc.setPersonHidden(id, true); this.toast(`${plural(S.sel.size, 'persona', 'personas')} en la bóveda`); S.selecting = false; S.sel.clear(); return this.refresh();
         case 'sel-merge': return this.mergeSelected();
+        case 'sel-together': { const ids = [...S.sel]; S.selecting = false; S.sel.clear(); S.view = { type: 'together', ids }; this.$('.body').scrollTop = 0; return this.render(); }
         case 'merge-into': return this.pickMergeTarget(v);
-        case 'hide-person': await sc.setPersonHidden(v, true); S.view = null; this.toast('Persona oculta · está en “Ocultos”'); return this.refresh();
+        case 'hide-person': await sc.setPersonHidden(v, true); S.view = null; this.toast('Guardada en la bóveda'); return this.refresh();
         case 'show-person': await sc.setPersonHidden(v, false); this.toast('Vuelve a la galería'); return this.refresh();
         case 'show-photo': await sc.setPhotoHidden(v, false); this.toast('Foto visible otra vez'); return this.refresh();
-        case 'view': return this.openViewer(v, el.dataset.f);
+        case 'view': return this.openViewer(el.dataset.ctx, v, el.dataset.f);
+        case 'memory': { const p = this.data.people.find((x) => x.id === v); return this.startShow(p.items.filter((i) => !i.photo.hidden).map((i) => i.photo), p.name || 'Recuerdo'); }
+        case 'memory-together': return this.startShow((this.ctxList || []).map((i) => i.photo), 'Juntos');
         case 'export-all': return this.export(this.data.people.filter((p) => !p.hidden));
         case 'export-one': return this.export(this.data.people.filter((p) => p.id === v));
+        case 'export-together': return this.export([{ name: 'Juntos', items: this.ctxList || [] }]);
+        case 'filter': S.filter = v; S.limit = PAGE; return this.render();
+        case 'more': S.limit += PAGE; return this.render();
+        case 'dupes-all': return this.hideDupes(S.dupes || []);
+        case 'dupes-one': return this.hideDupes([(S.dupes || [])[Number(v)]].filter(Boolean));
+        case 'key': return this.pressKey(v);
+        case 'key-del': S.pin = S.pin.slice(0, -1); return this.render();
+        case 'vault-lock': S.vaultOpen = false; return this.render();
+        case 'pin-reset':
+          if (!(await this.confirm('¿Cambiar el PIN?', 'Vas a crear uno nuevo. Lo que está en la bóveda se mantiene.', 'Cambiar'))) return;
+          this.settings.pinHash = ''; await db.setSetting('pinHash', ''); Object.assign(S, { tab: 'vault', vaultOpen: false, pin: '', pinStep: 'set' }); return this.render();
+        case 'theme': this.settings.theme = v; await db.setSetting('theme', v); this.applyTheme(); return this.render();
+        case 'idle': this.settings.idle = Number(v); await db.setSetting('idle', this.settings.idle); this.applyIdle(); return this.render();
         case 'size': this.settings.size = v; await db.setSetting('bubbleSize', v); this.applySize();
-          if (NATIVE) try { window.MemoraNative.setBubbleSize((SIZES.find((x) => x.k === v) || SIZES[1]).px); } catch { /* sin puente */ }
+          if (NATIVE) try { window.MemoraNative.setBubbleSize((SIZES.find((x) => x.k === v) || SIZES[1]).px); } catch { /* */ }
           return this.render();
         case 'overlay-on': window.MemoraNative.setOverlay(true); return this.toast('Activá “Mostrar sobre otras apps” y volvé');
         case 'overlay': {
           const M = window.MemoraNative; const active = M.overlayEnabled() && M.canOverlay();
-          if (active) { M.setOverlay(false); this.toast('Burbuja sólo dentro de Memora'); }
-          else { M.setOverlay(true); this.toast(M.canOverlay() ? 'Listo: salí de Memora y la vas a ver flotando' : 'Activá “Mostrar sobre otras apps” y volvé'); }
+          if (active) { M.setOverlay(false); this.toast('El orbe queda sólo dentro de Rostra'); }
+          else { M.setOverlay(true); this.toast(M.canOverlay() ? 'Listo: salí y lo vas a ver flotando' : 'Activá “Mostrar sobre otras apps” y volvé'); }
           return this.render();
         }
         case 'regroup': return this.regroup();
         case 'wipe':
-          if (!(await this.confirm('¿Borrar todo el índice?', 'Se borran carpetas elegidas, caras, nombres y ocultos de Memora. Tus fotos originales quedan intactas.', 'Borrar'))) return;
-          await db.clearAll(); S.view = null; this.toast('Índice borrado'); return this.refresh();
+          if (!(await this.confirm('¿Borrar todo?', 'Se borran carpetas, caras, nombres y la bóveda de Rostra. Tus fotos originales quedan intactas.', 'Borrar'))) return;
+          await db.clearAll(); this.settings.pinHash = ''; S.view = null; S.vaultOpen = false; this.toast('Índice borrado'); return this.refresh();
         default:
       }
     } catch (err) {
       if (err?.name === 'AbortError') return; // el usuario canceló un selector
-      console.error('[memora]', err); this.toast('Algo falló. Probá de nuevo.');
+      console.error('[rostra]', err); this.toast('Algo falló. Probá de nuevo.');
     }
   }
 
@@ -450,18 +675,15 @@ class Memora {
   }
 
   async addSource() {
-    if (!sc.supportsFSA()) { this.$('.picker').click(); return; } // Android/iOS/APK: selector de carpeta del sistema
+    if (!sc.supportsFSA()) { this.$('.picker').click(); return; } // Android, iOS y APK: selector del sistema
     let src;
-    try {
-      src = await sc.addSourceFromPicker();
-    } catch (err) {
+    try { src = await sc.addSourceFromPicker(); } catch (err) {
       if (err?.name === 'AbortError' && err?.message?.toLowerCase().includes('abort')) return; // canceló el usuario
-      // El navegador anuncia el selector pero no lo deja usar: caemos al selector clásico.
       this.toast('Elegí la carpeta en el selector del sistema');
       this.$('.picker').click();
       return;
     }
-    this.toast(`Carpeta “${src.name}” agregada`);
+    this.toast(`“${src.name}” agregada`);
     await this.refresh(); this.startScan([src.id]);
   }
 
@@ -479,11 +701,11 @@ class Memora {
           if (Date.now() - last > 1500) { last = Date.now(); this.refresh(); }
         },
       });
-      const msg = r.aborted ? 'Escaneo frenado' : `${plural(r.scanned, 'foto nueva', 'fotos nuevas')} · ${plural(r.faces, 'cara', 'caras')}`;
+      const msg = r.aborted ? 'Escaneo en pausa' : `${plural(r.scanned, 'foto nueva', 'fotos nuevas')} · ${plural(r.faces, 'cara', 'caras')}`;
       this.toast(r.blocked.length ? `${msg} · sin acceso: ${r.blocked.join(', ')}` : r.unsupported ? `${msg} · ${r.unsupported} sin formato compatible` : msg);
     } catch (err) {
-      console.error('[memora] escaneo', err);
-      this.toast('No se pudo cargar el detector de caras');
+      console.error('[rostra] escaneo', err);
+      this.toast('No se pudo iniciar el reconocimiento');
     } finally {
       this.state.scan = null; this.setRing(null);
       await this.refreshSources();
@@ -493,10 +715,11 @@ class Memora {
   async mergeSelected() {
     const ids = [...this.state.sel];
     const named = this.data.people.find((p) => ids.includes(p.id) && p.name);
-    const target = named?.id || ids.sort((a, b) => (this.data.people.find((p) => p.id === b)?.count || 0) - (this.data.people.find((p) => p.id === a)?.count || 0))[0];
+    const count = (id) => this.data.people.find((p) => p.id === id)?.count || 0;
+    const target = named?.id || ids.sort((a, b) => count(b) - count(a))[0];
     await sc.mergePersons(target, ids);
     this.state.selecting = false; this.state.sel.clear();
-    this.toast(`${ids.length} grupos unidos en uno`);
+    this.toast(`${ids.length} grupos unidos`);
     await this.refresh();
   }
 
@@ -511,67 +734,160 @@ class Memora {
   }
 
   async regroup() {
-    if (!(await this.confirm('¿Reagrupar caras?', 'Las personas con nombre se mantienen. Las “Sin nombre” se vuelven a agrupar con la sensibilidad elegida.', 'Reagrupar'))) return;
+    if (!(await this.confirm('¿Reagrupar?', 'Las personas con nombre se mantienen. Las “Sin nombre” se vuelven a agrupar con la sensibilidad elegida.', 'Reagrupar'))) return;
     await sc.regroup(this.settings.threshold);
     this.toast('Caras reagrupadas'); await this.refresh();
+  }
+
+  async hideDupes(groups) {
+    const copies = groups.flatMap((g) => g.slice(1));
+    if (!copies.length) return;
+    for (const p of copies) await sc.setPhotoHidden(p.id, true);
+    this.toast(`${plural(copies.length, 'copia guardada', 'copias guardadas')} en la bóveda`);
+    await this.refresh();
   }
 
   async export(people) {
     const list = people.map((p) => ({ ...p, items: p.items.filter((i) => !i.photo.hidden) })).filter((p) => p.items.length);
     if (!list.length) return this.toast('No hay fotos visibles para exportar');
-    if (sc.isEmbedded) return this.toast('Armar carpetas funciona con la app instalada, no en la vista previa');
+    if (sc.isEmbedded) return this.toast('Armar carpetas funciona en la app instalada');
     const n = list.reduce((s, p) => s + p.items.length, 0);
-    const fsa = sc.supportsFSA();
-    const pick = fsa || NATIVE;
-    if (!(await this.confirm('Acomodar en carpetas', `Se crea una carpeta por persona (${plural(list.length, 'carpeta', 'carpetas')}, ${plural(n, 'foto', 'fotos')}). ${pick ? 'Elegí dónde crearlas.' : 'Se descarga un .zip.'} Se copian: los originales no se mueven ni se borran.`, pick ? 'Elegir destino' : 'Descargar .zip'))) return;
-    const onP = (d, t) => { this.state.scan = { phase: 'scan', source: 'Copiando fotos', done: d, total: t }; this.renderProgress(); this.setRing(d / t); };
+    const fsa = sc.supportsFSA(); const pick = fsa || NATIVE;
+    if (!(await this.confirm('Armar carpetas', `Una carpeta por persona: ${plural(list.length, 'carpeta', 'carpetas')}, ${plural(n, 'foto', 'fotos')}. ${pick ? 'Elegí dónde crearlas.' : 'Se descarga un .zip.'} Se copian: los originales no se mueven ni se borran.`, pick ? 'Elegir destino' : 'Descargar .zip'))) return;
+    const onP = (d, t) => { this.state.scan = { phase: 'scan', label: 'Copiando', source: 'Armando carpetas', done: d, total: t }; this.renderProgress(); this.setRing(d / t); };
     try {
       const r = NATIVE ? await exportToNative(list, onP) : fsa ? await exportToFolder(list, onP) : await exportToZip(list, onP);
       if (r.cancelled) return this.toast('No se eligió destino');
-      this.toast(r.missing.length ? `Listo · ${r.missing.length} sin original (volvé a dar acceso a la carpeta)` : `Listo · ${plural(r.done, 'foto copiada', 'fotos copiadas')}`);
+      this.toast(r.missing.length ? `Listo · ${r.missing.length} sin original (volvé a elegir la carpeta)` : `Listo · ${plural(r.done, 'foto copiada', 'fotos copiadas')}`);
     } finally { this.state.scan = null; this.setRing(null); this.renderProgress(); }
   }
 
-  /* ---------- Visor de foto ---------- */
-  async openViewer(photoId, faceId) {
-    const person = this.data.people.find((p) => p.id === this.state.view?.id);
-    const item = person?.items.find((i) => i.photo.id === photoId && i.face.id === faceId) || person?.items.find((i) => i.photo.id === photoId);
-    if (!item) return;
-    const { photo, face } = item;
-    const orig = await sc.getOriginal(photo);
-    const src = URL.createObjectURL(orig || photo.thumb);
+  /* ---------- Visor ---------- */
+  async openViewer(ctx, photoId, faceId) {
+    const list = this.ctxList || [];
+    const idx = Math.max(0, list.findIndex((i) => i.photo.id === photoId && (!faceId || i.face?.id === faceId)));
+    if (!list.length) return;
+    const personId = ctx === 'person' ? this.state.view?.id : null;
     const wrap = document.createElement('div');
-    wrap.className = 'viewer'; wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-label', photo.name);
-    wrap.innerHTML = `<div class="top"><button class="iconbtn" data-vx="close" aria-label="Cerrar">${I.back}</button><span class="t">${esc(photo.path)}</span></div>
-      <div class="stage"><div class="wrap"><img alt="" src="${src}"><span class="box"></span></div></div>
-      <div class="acts">
-        <button data-vx="cover">${I.star}Usar de portada</button>
-        <button data-vx="detach">${I.split}No es esta persona</button>
-        <button data-vx="hide">${I.eyeOff}Ocultar foto</button>
-      </div>`;
+    wrap.className = 'viewer'; wrap.setAttribute('role', 'dialog');
     this.root.appendChild(wrap);
-    this.viewer = { el: wrap, src };
-    const img = wrap.querySelector('img'); const box = wrap.querySelector('.box');
-    const placeBox = () => {
-      const f = img.clientWidth / (photo.origW || img.naturalWidth || 1); // caja guardada en coordenadas del original
-      Object.assign(box.style, { left: `${face.box.x * f}px`, top: `${face.box.y * f}px`, width: `${face.box.w * f}px`, height: `${face.box.h * f}px` });
-    };
-    img.onload = placeBox;
-    if (img.complete) placeBox();
-    wrap.addEventListener('click', async (e) => {
-      const b = e.composedPath().find((n) => n.dataset?.vx); if (!b) return;
-      const act = b.dataset.vx;
-      if (act === 'cover') { await sc.setCover(person.id, face.id); this.toast('Portada actualizada'); }
-      if (act === 'detach') { await sc.detachFace(face.id); this.toast('Separada en una persona nueva'); }
-      if (act === 'hide') { await sc.setPhotoHidden(photo.id, true); this.toast('Foto oculta · está en “Ocultos”'); }
-      this.closeViewer();
-      if (act !== 'close') await this.refresh();
-    });
+    this.viewer = { el: wrap, list, idx, personId, src: null };
+    wrap.addEventListener('click', (e) => this.onViewerClick(e));
+    let sx = null;
+    wrap.addEventListener('pointerdown', (e) => { if (e.composedPath().some((n) => n.classList?.contains('stage'))) sx = e.clientX; });
+    wrap.addEventListener('pointerup', (e) => { if (sx == null) return; const dx = e.clientX - sx; sx = null; if (Math.abs(dx) > 50) this.stepViewer(dx < 0 ? 1 : -1); });
+    await this.paintViewer();
+  }
+
+  async paintViewer() {
+    const V = this.viewer; if (!V) return;
+    const { photo, face } = V.list[V.idx];
+    const orig = await sc.getOriginal(photo);
+    if (!this.viewer) return;
+    if (V.src) URL.revokeObjectURL(V.src);
+    V.src = URL.createObjectURL(orig || photo.thumb);
+    const inPerson = !!V.personId;
+    V.el.innerHTML = `<div class="top"><button class="iconbtn" data-vx="close" aria-label="Cerrar">${I.back}</button>
+        <span class="t num">${nf.format(V.idx + 1)} de ${nf.format(V.list.length)}</span>
+        <button class="iconbtn ${photo.fav ? 'on' : ''}" data-vx="fav" aria-label="Favorita">${photo.fav ? I.starFill : I.star}</button></div>
+      <div class="stage"><div class="wrap"><img alt="${esc(photo.name)}" src="${V.src}">${inPerson && face ? '<span class="box"></span>' : ''}</div>
+        ${V.idx > 0 ? `<button class="nav-arrow l" data-vx="prev" aria-label="Anterior">${I.back}</button>` : ''}
+        ${V.idx < V.list.length - 1 ? `<button class="nav-arrow r" data-vx="next" aria-label="Siguiente">${I.next}</button>` : ''}</div>
+      <div class="acts">
+        ${inPerson ? `<button data-vx="cover">${I.sparkle}Portada</button><button data-vx="detach">${I.split}No es</button>` : ''}
+        <button data-vx="hide">${I.lock}Bóveda</button>
+      </div>`;
+    const img = V.el.querySelector('img'); const box = V.el.querySelector('.box');
+    if (box) {
+      const place = () => {
+        const f = img.clientWidth / (photo.origW || img.naturalWidth || 1);
+        Object.assign(box.style, { left: `${face.box.x * f}px`, top: `${face.box.y * f}px`, width: `${face.box.w * f}px`, height: `${face.box.h * f}px` });
+      };
+      img.onload = place; if (img.complete) place();
+    }
+  }
+
+  stepViewer(d) {
+    const V = this.viewer; if (!V) return;
+    const n = V.idx + d; if (n < 0 || n >= V.list.length) return;
+    V.idx = n; vibrate(3); this.paintViewer();
+  }
+
+  async onViewerClick(e) {
+    const b = e.composedPath().find((n) => n.dataset?.vx); if (!b) return;
+    const V = this.viewer; const act = b.dataset.vx; const item = V.list[V.idx];
+    if (act === 'close') return this.closeViewer();
+    if (act === 'prev') return this.stepViewer(-1);
+    if (act === 'next') return this.stepViewer(1);
+    if (act === 'fav') { item.photo.fav = !item.photo.fav; await sc.setFavorite(item.photo.id, item.photo.fav); vibrate(8); this.toast(item.photo.fav ? 'En favoritas' : 'Fuera de favoritas'); this.dirty = true; return this.paintViewer(); }
+    if (act === 'cover') { await sc.setCover(V.personId, item.face.id); this.toast('Portada actualizada'); }
+    if (act === 'detach') { await sc.detachFace(item.face.id); this.toast('Separada en una persona nueva'); }
+    if (act === 'hide') { await sc.setPhotoHidden(item.photo.id, true); this.toast('Guardada en la bóveda'); }
+    this.closeViewer(); await this.refresh();
   }
 
   closeViewer() {
     if (!this.viewer) return false;
-    URL.revokeObjectURL(this.viewer.src); this.viewer.el.remove(); this.viewer = null;
+    if (this.viewer.src) URL.revokeObjectURL(this.viewer.src);
+    this.viewer.el.remove(); this.viewer = null;
+    if (this.dirty) { this.dirty = false; this.refresh(); }
+    return true;
+  }
+
+  /* ---------- Recuerdo (presentación) ---------- */
+  async startShow(photos, title) {
+    if (!photos.length) return this.toast('No hay fotos para mostrar');
+    const list = photos.slice(0, 40);
+    const el = document.createElement('div'); el.className = 'show'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', `Recuerdo: ${title}`);
+    el.innerHTML = `<div class="layer"><img alt=""></div><div class="layer"><img alt=""></div><div class="veil"></div>
+      <div class="bars">${list.map(() => '<i><b></b></i>').join('')}</div>
+      <div class="ctl"><button class="iconbtn" data-sx="pause" aria-label="Pausar">${I.pause}</button><button class="iconbtn" data-sx="close" aria-label="Cerrar">${I.close}</button></div>
+      <div class="cap"><h2>${esc(title)}</h2><p class="num"></p></div>`;
+    this.root.appendChild(el);
+    const dur = 4200; el.style.setProperty('--dur', `${dur}ms`);
+    this.show = { el, list, i: -1, paused: false, timer: null, urls: [], layer: 0, dur };
+    el.addEventListener('click', (e) => {
+      const b = e.composedPath().find((n) => n.dataset?.sx);
+      if (b?.dataset.sx === 'close') return this.stopShow();
+      if (b?.dataset.sx === 'pause') return this.toggleShow();
+      const x = e.clientX / window.innerWidth;
+      if (x > 0.66) this.nextSlide(); else if (x < 0.33) this.nextSlide(-1); else this.toggleShow();
+    });
+    this.nextSlide();
+  }
+
+  async nextSlide(dir = 1) {
+    const S = this.show; if (!S) return;
+    clearTimeout(S.timer);
+    const n = S.i + dir;
+    if (n >= S.list.length) return this.stopShow();
+    S.i = Math.max(0, n);
+    const photo = S.list[S.i];
+    const file = await sc.getOriginal(photo);
+    if (!this.show) return;
+    const u = URL.createObjectURL(file || photo.thumb); S.urls.push(u);
+    const layers = S.el.querySelectorAll('.layer'); S.layer = 1 - S.layer;
+    const img = layers[S.layer].querySelector('img');
+    img.style.animation = 'none'; void img.offsetWidth; img.style.animation = '';
+    img.src = u;
+    layers[S.layer].classList.add('on'); layers[1 - S.layer].classList.remove('on');
+    S.el.querySelectorAll('.bars i').forEach((b, k) => { b.className = k < S.i ? 'done' : k === S.i ? 'now' : ''; });
+    const bar = S.el.querySelector('.bars i.now b'); if (bar) { bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = ''; }
+    S.el.querySelector('.cap p').textContent = `${nf.format(S.i + 1)} / ${nf.format(S.list.length)} · ${new Date(photo.lastModified || photo.scannedAt).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}`;
+    while (S.urls.length > 3) URL.revokeObjectURL(S.urls.shift());
+    if (!S.paused) S.timer = setTimeout(() => this.nextSlide(), S.dur);
+  }
+
+  toggleShow() {
+    const S = this.show; if (!S) return;
+    S.paused = !S.paused; S.el.classList.toggle('paused', S.paused);
+    S.el.querySelector('[data-sx="pause"]').innerHTML = S.paused ? I.play : I.pause;
+    if (S.paused) clearTimeout(S.timer); else S.timer = setTimeout(() => this.nextSlide(), 1600);
+  }
+
+  stopShow() {
+    const S = this.show; if (!S) return false;
+    clearTimeout(S.timer); S.urls.forEach((u) => URL.revokeObjectURL(u)); S.el.remove(); this.show = null;
     return true;
   }
 
@@ -580,11 +896,10 @@ class Memora {
     return new Promise((resolve) => {
       const d = document.createElement('div'); d.className = 'dialog';
       d.innerHTML = `<div class="card" role="alertdialog" aria-label="${esc(title)}"><h3>${esc(title)}</h3><p class="note">${esc(text)}</p>
-        <div class="row-btns"><button class="btn" data-r="0">Cancelar</button><button class="btn primary" data-r="1">${esc(ok)}</button></div></div>`;
-      d.addEventListener('click', (e) => {
-        const b = e.composedPath().find((n) => n.dataset?.r);
-        if (b || e.target === d) { d.remove(); resolve(b?.dataset.r === '1'); }
-      });
+        <div class="row"><button class="btn ghost" data-r="0">Cancelar</button><button class="btn primary" data-r="1">${esc(ok)}</button></div></div>`;
+      const done = (val) => { d.remove(); resolve(val); };
+      d.addEventListener('dismiss', () => done(false));
+      d.addEventListener('click', (e) => { const b = e.composedPath().find((n) => n.dataset?.r); if (b || e.target === d) done(b?.dataset.r === '1'); });
       this.root.appendChild(d); d.querySelector('[data-r="1"]').focus();
     });
   }
@@ -594,12 +909,11 @@ class Memora {
       const urls = [];
       const d = document.createElement('div'); d.className = 'dialog';
       d.innerHTML = `<div class="card" role="dialog" aria-label="${esc(title)}"><h3>${esc(title)}</h3><p class="note">${esc(text)}</p>
-        <div class="list">${people.map((p) => { const u = p.cover?.thumb ? URL.createObjectURL(p.cover.thumb) : ''; urls.push(u); return `<button class="opt" data-r="${p.id}"><img class="face" alt="" src="${u}"><span>${esc(p.name || 'Sin nombre')}</span><span class="note small" style="margin-left:auto">${p.visibleCount}</span></button>`; }).join('')}</div>
-        <button class="btn block" data-r="">Cancelar</button></div>`;
-      d.addEventListener('click', (e) => {
-        const b = e.composedPath().find((n) => n.dataset && 'r' in n.dataset);
-        if (b || e.target === d) { d.remove(); urls.forEach((u) => u && URL.revokeObjectURL(u)); resolve(b?.dataset.r || null); }
-      });
+        <div class="list">${people.map((p) => { const u = p.cover?.thumb ? URL.createObjectURL(p.cover.thumb) : ''; urls.push(u); return `<button class="opt" data-r="${p.id}"><img class="avatar" alt="" src="${u}"><span>${esc(p.name || 'Sin nombre')}</span><span class="note small num" style="margin-left:auto">${p.visibleCount}</span></button>`; }).join('')}</div>
+        <button class="btn ghost block" data-r="">Cancelar</button></div>`;
+      const done = (val) => { d.remove(); urls.forEach((u) => u && URL.revokeObjectURL(u)); resolve(val); };
+      d.addEventListener('dismiss', () => done(null));
+      d.addEventListener('click', (e) => { const b = e.composedPath().find((n) => n.dataset && 'r' in n.dataset); if (b || e.target === d) done(b?.dataset.r || null); });
       this.root.appendChild(d);
     });
   }
@@ -612,8 +926,9 @@ class Memora {
 
 export async function mountMemora(host) {
   if (window.__memora) return window.__memora;
-  const m = new Memora(host);
-  window.__memora = m;
+  const m = new Rostra(host);
+  window.__memora = m; window.__rostra = m;
   await m.init();
   return m;
 }
+export const mountRostra = mountMemora;

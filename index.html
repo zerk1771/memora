@@ -3,35 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#141414">
-  <meta name="description" content="Galería flotante que agrupa por persona las fotos de las carpetas que vos elijas. Todo local.">
-  <title>Memora · Caras</title>
+  <meta name="theme-color" content="#0B0B0D" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F5F3EF" media="(prefers-color-scheme: light)">
+  <meta name="description" content="Rostra reconoce las caras de las carpetas que elijas y arma un álbum por persona. Todo en tu teléfono.">
+  <title>Rostra</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="vendor/fonts/manrope.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="vendor/fonts/instrument-serif-italic.woff2" as="font" type="font/woff2" crossorigin>
   <style>
-    :root{--carbon:#141414;--carbon-2:#1C1C1B;--line:#33332F;--cream:#F3EBDD;--muted:#8A857B;--lime:#A8E063}
-    html,body{margin:0;min-height:100%;background:var(--carbon);color:var(--cream);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-    main{max-width:440px;margin:0 auto;padding:calc(28px + env(safe-area-inset-top)) 16px 40px}
-    h1{font-size:26px;letter-spacing:-.4px;margin:0 0 6px} h1 span{color:var(--lime)}
-    p{color:var(--muted);line-height:1.5;font-size:14.5px;margin:0 0 14px}
-    .card{background:var(--carbon-2);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-top:14px}
+    @font-face{font-family:"Rostra Sans";src:url("vendor/fonts/manrope.woff2") format("woff2");font-weight:200 800;font-display:swap}
+    @font-face{font-family:"Rostra Serif";src:url("vendor/fonts/instrument-serif-italic.woff2") format("woff2");font-style:italic;font-display:swap}
+    /* Layout: portada de una columna; la app vive en el orbe flotante. */
+    :root{--bg:#0B0B0D;--text:#F3F0EA;--text-2:#B4AEA4;--muted:#7A756D;--accent:#E4C894;--line:rgba(255,255,255,.08);color-scheme:dark}
+    @media (prefers-color-scheme: light){:root{--bg:#F5F3EF;--text:#17140F;--text-2:#5A544B;--muted:#8C857A;--accent:#9C7535;--line:rgba(20,16,10,.08);color-scheme:light}}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:"Rostra Sans",ui-sans-serif,system-ui,sans-serif}
     html.native,html.native body{background:transparent} html.native main{display:none}
-    .card b{color:var(--cream)} ol{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:14px;line-height:1.7}
+    main{max-width:440px;margin:0 auto;padding:calc(56px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right, 0px)) 48px max(24px, env(safe-area-inset-left, 0px))}
+    .kicker{font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);margin:0 0 18px}
+    h1{font-family:"Rostra Serif",Georgia,serif;font-style:italic;font-weight:400;font-size:64px;line-height:.9;letter-spacing:-1px;margin:0}
+    h1 span{color:var(--accent);font-style:normal}
+    .lede{font-size:16px;line-height:1.55;color:var(--text-2);margin:20px 0 34px;max-width:34ch}
+    ol{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+    li{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:16px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:1.45;color:var(--text-2)}
+    li b{color:var(--text);font-weight:700}
+    li em{font-family:"Rostra Serif",Georgia,serif;font-size:20px;line-height:1;color:var(--accent)}
+    .foot{font-size:12px;color:var(--muted);margin-top:26px}
   </style>
 </head>
 <body>
   <script>if (window.MemoraNative) document.documentElement.classList.add('native');</script>
   <main>
-    <h1>Memora <span>·</span> caras</h1>
-    <p>La burbuja chiquita es la galería. Movela a donde quieras y tocala para abrirla.</p>
-    <div class="card"><b>Cómo se usa</b>
-      <ol>
-        <li>Abrí la burbuja → <b>Carpetas</b> → Agregar carpeta.</li>
-        <li>Memora busca caras sólo ahí, en tu dispositivo.</li>
-        <li>Poné nombres, uní u ocultá personas o fotos.</li>
-        <li><b>Armar carpetas</b> copia las fotos a una carpeta por persona.</li>
-      </ol>
-    </div>
+    <p class="kicker">Galería por personas · privada</p>
+    <h1>Rostra<span>.</span></h1>
+    <p class="lede">Tus personas, en una burbuja. Tocá el orbe del costado para abrir la galería y movelo a donde quieras.</p>
+    <ol>
+      <li><em>i</em><span><b>Elegí tus carpetas.</b> Rostra mira sólo esas, nada más.</span></li>
+      <li><em>ii</em><span><b>Reconoce cada cara</b> en tu dispositivo y arma un álbum por persona.</span></li>
+      <li><em>iii</em><span><b>Ponele nombre, mirá sus recuerdos</b> y armá carpetas reales con un toque.</span></li>
+    </ol>
+    <p class="foot">Sin cuentas, sin nube. Tus fotos no salen de tu teléfono.</p>
   </main>
   <script type="module">
     import { mountMemora } from './src/widget.js';

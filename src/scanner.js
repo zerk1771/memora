@@ -143,6 +143,56 @@ async function faceThumb(canvas, box) {
   return toBlob(c, 0.82);
 }
 
+// Huella visual (dHash 64 bits) para encontrar fotos casi iguales.
+export function dhash(source) {
+  const c = document.createElement('canvas'); c.width = 9; c.height = 8;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(source, 0, 0, 9, 8);
+  const d = g.getImageData(0, 0, 9, 8).data;
+  let bits = '';
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const i = (y * 9 + x) * 4; const j = i + 4;
+    bits += (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) > (d[j] * 0.3 + d[j + 1] * 0.59 + d[j + 2] * 0.11) ? '1' : '0';
+  }
+  let hex = ''; for (let k = 0; k < 64; k += 4) hex += parseInt(bits.slice(k, k + 4), 2).toString(16);
+  return hex;
+}
+
+const hamming = (a, b) => {
+  let n = 0;
+  for (let i = 0; i < 16; i++) { let x = parseInt(a[i], 16) ^ parseInt(b[i], 16); while (x) { n += x & 1; x >>= 1; } }
+  return n;
+};
+
+// Fotos indexadas antes de esta versión no tienen huella: se calcula desde la miniatura.
+export async function ensureHashes() {
+  const photos = (await db.all('photos')).filter((p) => !p.hash && p.thumb);
+  for (const p of photos) {
+    try { const bmp = await createImageBitmap(p.thumb); p.hash = dhash(bmp); bmp.close?.(); await db.put('photos', p); } catch { /* miniatura ilegible */ }
+  }
+  return photos.length;
+}
+
+// Grupos de fotos casi idénticas (distancia de huella <= 5). Se sugiere conservar la más pesada.
+export function findDuplicates(photos) {
+  const list = photos.filter((p) => p.hash);
+  const used = new Set(); const groups = [];
+  for (let i = 0; i < list.length; i++) {
+    if (used.has(list[i].id)) continue;
+    const g = [list[i]];
+    for (let j = i + 1; j < list.length; j++) {
+      if (!used.has(list[j].id) && hamming(list[i].hash, list[j].hash) <= 5) { g.push(list[j]); used.add(list[j].id); }
+    }
+    if (g.length > 1) { used.add(list[i].id); groups.push(g.sort((a, b) => b.size - a.size)); }
+  }
+  return groups;
+}
+
+export async function setFavorite(photoId, fav) {
+  const p = await db.get('photos', photoId); if (!p) return;
+  p.fav = fav; await db.put('photos', p);
+}
+
 const dist = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; s += d * d; } return Math.sqrt(s); };
 
 /* ---------- Escaneo ---------- */
@@ -181,7 +231,9 @@ export async function scan({ sourceIds = null, onProgress = () => {}, signal } =
       try { bitmap = await createImageBitmap(file); } catch { report.unsupported++; continue; }
       const origW = bitmap.width; const origH = bitmap.height;
       const { canvas, scale } = canvasFrom(bitmap, DETECT_MAX);
-      const thumb = await toBlob(canvasFrom(bitmap, THUMB_MAX).canvas);
+      const thumbCanvas = canvasFrom(bitmap, THUMB_MAX).canvas;
+      const thumb = await toBlob(thumbCanvas);
+      const hash = dhash(thumbCanvas);
       bitmap.close?.();
 
       let results = [];
@@ -213,7 +265,7 @@ export async function scan({ sourceIds = null, onProgress = () => {}, signal } =
       }
       await db.put('photos', {
         id, sourceId: src.id, path: f.path, name: file.name, size: file.size, lastModified: file.lastModified,
-        thumb, origW, origH, faceCount: faces.length, hidden: prev?.hidden || false, scannedAt: Date.now(),
+        thumb, hash, origW, origH, faceCount: faces.length, hidden: prev?.hidden || false, fav: prev?.fav || false, scannedAt: Date.now(),
       });
       await db.putMany('faces', faces);
       await db.putMany('persons', [...new Set(faces.map((x) => x.personId))].map((pid) => persons.get(pid)));
@@ -290,6 +342,14 @@ export async function mergePersons(targetId, otherIds) {
   }
   if (target) await db.put('persons', target);
   await recount();
+}
+
+// Fotos donde aparecen TODAS las personas elegidas.
+export function together(people, ids) {
+  const sets = ids.map((id) => new Set((people.find((p) => p.id === id)?.items || []).map((i) => i.photo.id)));
+  if (!sets.length) return [];
+  const first = people.find((p) => p.id === ids[0]);
+  return (first?.items || []).filter((i) => !i.photo.hidden && sets.every((s) => s.has(i.photo.id)));
 }
 
 // Reagrupa sólo las caras "Sin nombre"; las personas con nombre quedan fijas.
@@ -369,6 +429,8 @@ export async function snapshot() {
     })
     .filter((p) => p.items.length)
     .sort((a, b) => (!!b.name - !!a.name) || b.visibleCount - a.visibleCount);
-  const noFaces = photos.filter((p) => enabled.has(p.sourceId) && p.faceCount === 0);
-  return { sources, photos, people, noFaces, hiddenPhotos: photos.filter((p) => p.hidden && enabled.has(p.sourceId)) };
+  const inScope = photos.filter((p) => enabled.has(p.sourceId));
+  const visible = inScope.filter((p) => !p.hidden).sort((a, b) => b.lastModified - a.lastModified);
+  const noFaces = visible.filter((p) => p.faceCount === 0);
+  return { sources, photos, visible, people, noFaces, hiddenPhotos: inScope.filter((p) => p.hidden) };
 }

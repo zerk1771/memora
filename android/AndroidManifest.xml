@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="app.memora"
-    android:versionCode="3"
-    android:versionName="1.2">
+    android:versionCode="4"
+    android:versionName="2.0">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="28" />
 
     <!-- Burbuja encima de otras apps -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:label="Memora"
+        android:label="Rostra"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/AppTheme"
         android:allowBackup="false"

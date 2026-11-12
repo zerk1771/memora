@@ -1,16 +1,26 @@
 {
-  "name": "Memora · Caras por carpeta",
-  "short_name": "Memora",
-  "description": "Galería flotante que agrupa por persona las fotos de las carpetas que elijas. Todo local.",
+  "name": "Rostra · Galería por personas",
+  "short_name": "Rostra",
+  "description": "Reconoce las caras de las carpetas que elijas y arma un álbum por persona. Todo en tu teléfono.",
   "lang": "es-AR",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#141414",
-  "theme_color": "#141414",
+  "background_color": "#0B0B0D",
+  "theme_color": "#0B0B0D",
   "icons": [
-    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
   ]
 }
