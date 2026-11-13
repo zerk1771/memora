@@ -45,6 +45,7 @@ async function store(name, mode = 'readonly') {
 export async function get(name, key) { return wrap((await store(name)).get(key)); }
 export async function all(name) { return wrap((await store(name)).getAll()); }
 export async function put(name, value) { return wrap((await store(name, 'readwrite')).put(value)); }
+export async function count(name) { return wrap((await store(name)).count()); }
 export async function del(name, key) { return wrap((await store(name, 'readwrite')).delete(key)); }
 export async function byIndex(name, index, value) {
   return wrap((await store(name)).index(index).getAll(value));

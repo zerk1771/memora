@@ -577,6 +577,12 @@ export async function removeSource(id) {
 
 /* ---------- Lecturas para la UI ---------- */
 
+// Firma liviana para saber si hay algo nuevo sin leer todas las fotos.
+export async function quickSignature() {
+  const [sources, nPhotos, nFaces, nPersons] = await Promise.all([db.all('sources'), db.count('photos'), db.count('faces'), db.count('persons')]);
+  return [nPhotos, nFaces, nPersons, ...sources.map((x) => `${x.id}:${x.enabled}:${x.photoCount}:${x.lastScan || 0}:${Object.keys(x.dirs || {}).length}`)].join('|');
+}
+
 export async function snapshot() {
   const [sources, photos, faces, persons] = await Promise.all(['sources', 'photos', 'faces', 'persons'].map((n) => db.all(n)));
   const enabled = new Set(sources.filter((s) => s.enabled).map((s) => s.id));

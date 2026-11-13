@@ -81,7 +81,11 @@ svg{display:block}
   display:flex;flex-direction:column;overflow:hidden}
 .sheet.on{transform:none;opacity:1;pointer-events:auto}
 .sheet.resizing{transition:none}
-.resize{height:20px;display:grid;place-items:center;background:var(--raise);cursor:ns-resize;touch-action:none;flex:none}
+.resize{height:22px;display:grid;place-items:center;background:var(--raise);cursor:nwse-resize;touch-action:none;flex:none;position:relative}
+.resize::before,.resize::after{content:"";position:absolute;bottom:5px;width:9px;height:9px;border-bottom:2px solid var(--line-2);opacity:.9}
+.resize::before{left:10px;border-left:2px solid var(--line-2);border-bottom-left-radius:4px}
+.resize::after{right:10px;border-right:2px solid var(--line-2);border-bottom-right-radius:4px}
+.resize[data-side="l"]::before,.resize[data-side="r"]::after{border-color:var(--accent)}
 .resize i{width:42px;height:4px;border-radius:2px;background:var(--line-2);transition:background .15s,width .15s}
 .resize:active i,.sheet.resizing .resize i{background:var(--accent);width:56px}
 .head{display:flex;align-items:center;gap:10px;padding:14px 8px 8px 18px}

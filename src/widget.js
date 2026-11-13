@@ -7,7 +7,7 @@ import { issue } from './quality.js';
 import morphdom from '../vendor/morphdom-esm.js';
 
 const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
-const VERSION = '2.5';
+const VERSION = '2.6';
 
 const sv = (p, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${p}</svg>`;
 const I = {
@@ -144,7 +144,11 @@ class Pompa {
     window.addEventListener('popstate', () => { if (this.state.open && !NATIVE) this.close(true); });
     window.addEventListener('keydown', (e) => this.onKey(e));
     await this.refresh();
-    if (NATIVE) { this.syncNativePos(); this.open(); } // el APK abre directo la ventana junto a la burbuja
+    if (NATIVE) { this.syncNativePos(); this.open(); }
+    // Red de seguridad: si algo cambió en los datos y la pantalla no se enteró, se actualiza sola.
+    setInterval(() => this.heartbeat(), 2000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.heartbeat(true); });
+    window.addEventListener('focus', () => this.heartbeat(true)); // el APK abre directo la ventana junto a la burbuja
   }
 
   /* ---------- Apariencia ---------- */
@@ -186,7 +190,7 @@ class Pompa {
       if (!start) return;
       const dx = e.clientX - start.px; const dy = e.clientY - start.py;
       if (!moved && Math.hypot(dx, dy) < 6) return;
-      moved = true; b.classList.add('dragging');
+      moved = true; b.classList.add('dragging'); this.manualRect = null;
       this.placeBubble(start.x + dx, start.y + dy);
     });
     b.addEventListener('pointerup', async () => {
@@ -216,7 +220,7 @@ class Pompa {
   /* ---------- Ventana ---------- */
   open() {
     if (this.state.open) return;
-    this.state.open = true;
+    this.state.open = true; this.manualRect = null;
     if (!NATIVE) try { history.pushState({ rostra: true }, ''); } catch { /* vista embebida */ }
     const b = this.$('.bubble'); b.classList.add('open'); b.setAttribute('aria-expanded', 'true');
     this.$('.dot .badge')?.remove();
@@ -249,40 +253,56 @@ class Pompa {
     const cx = this.bxy.x + box / 2; const cy = this.bxy.y + box / 2;
     this.toRight = cx < W / 2;
     let left = this.toRight ? this.bxy.x + box + gap : this.bxy.x - pw - gap;
+    let top = cy - ph / 2;
+    if (this.manualRect) { left = this.manualRect.left; top = this.manualRect.top; } // la dejaste donde la agrandaste
     left = Math.min(Math.max(left, 8), W - pw - 8);
-    const top = Math.min(Math.max(cy - ph / 2, 8), H - ph - 8);
+    top = Math.min(Math.max(top, 8), H - ph - 8);
     Object.assign(sh.style, { left: `${left}px`, top: `${top}px` });
     sh.style.setProperty('--pw', `${pw}px`); sh.style.setProperty('--ph', `${ph}px`);
     sh.style.setProperty('--ox', `${Math.min(Math.max(cx - left, 0), pw)}px`);
     sh.style.setProperty('--oy', `${Math.min(Math.max(cy - top, 0), ph)}px`);
   }
 
-  // Agarradera inferior: arrastrá para cambiar ancho y alto. Se guarda.
+  // Agarradera inferior: la ventana crece hacia donde arrastrás (como en una computadora).
+  // Desde la mitad derecha: fijo el borde izquierdo y crece a la derecha. Desde la mitad izquierda: al revés.
+  // Hacia abajo crece hacia abajo (el borde de arriba queda fijo).
   bindResize() {
     const g = this.$('.resize'); const sh = this.$('.sheet'); let st = null;
+    const W = () => window.innerWidth; const H = () => window.innerHeight;
+    const apply = (left, top, w, h) => {
+      w = Math.round(Math.min(Math.max(w, 260), W() - 16)); h = Math.round(Math.min(Math.max(h, 360), H() - 16));
+      this.settings.win = { w, h }; this.manualRect = { left, top };
+      this.placeSheet();
+    };
     g.addEventListener('pointerdown', (e) => {
       const r = sh.getBoundingClientRect();
-      st = { x: e.clientX, y: e.clientY, w: r.width, h: r.height };
+      st = { x: e.clientX, y: e.clientY, l: r.left, t: r.top, w: r.width, h: r.height, fromLeft: e.clientX < r.left + r.width / 2 };
+      g.dataset.side = st.fromLeft ? 'l' : 'r';
       sh.classList.add('resizing'); try { g.setPointerCapture(e.pointerId); } catch { /* */ }
     });
     g.addEventListener('pointermove', (e) => {
       if (!st) return;
-      const dx = (e.clientX - st.x) * (this.toRight ? 1 : -1);
-      const dy = (e.clientY - st.y) * 2; // la ventana crece centrada en la burbuja
-      this.settings.win = { w: st.w + dx, h: st.h + dy };
-      this.placeSheet();
+      const dx = e.clientX - st.x; const dy = e.clientY - st.y;
+      if (st.fromLeft) {
+        const right = st.l + st.w;
+        const w = Math.min(st.w - dx, right - 8); // arrastrar a la izquierda agranda hacia la izquierda
+        apply(right - Math.max(260, w), st.t, w, st.h + dy);
+      } else {
+        apply(st.l, st.t, Math.min(st.w + dx, W() - 8 - st.l), st.h + dy); // a la derecha agranda hacia la derecha
+      }
     });
     const end = async () => {
-      if (!st) return; st = null; sh.classList.remove('resizing');
+      if (!st) return; st = null; sh.classList.remove('resizing'); delete g.dataset.side;
       const r = sh.getBoundingClientRect();
       this.settings.win = { w: Math.round(r.width), h: Math.round(r.height) };
+      this.manualRect = { left: r.left, top: r.top };
       vibrate(5); await db.setSetting('win', this.settings.win);
     };
     g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
     g.addEventListener('keydown', async (e) => {
       const step = { ArrowUp: [0, -24], ArrowDown: [0, 24], ArrowLeft: [-16, 0], ArrowRight: [16, 0] }[e.key]; if (!step) return;
       e.preventDefault(); const r = sh.getBoundingClientRect();
-      this.settings.win = { w: r.width + step[0], h: r.height + step[1] }; this.placeSheet(); await db.setSetting('win', this.settings.win);
+      apply(r.left, r.top, r.width + step[0], r.height + step[1]); await db.setSetting('win', this.settings.win);
     });
   }
 
@@ -380,7 +400,16 @@ class Pompa {
 
   typingIn() {
     const a = this.root.activeElement;
-    return a && a.tagName === 'INPUT' && a.type !== 'range' ? a : null;
+    return a && a.tagName === 'INPUT' && ['text', 'search', ''].includes(a.type) ? a : null; // sólo campos de texto
+  }
+
+  async heartbeat(force = false) {
+    if (!this.state.open || document.hidden || this.hbBusy) return;
+    this.hbBusy = true;
+    try {
+      const sig = await sc.quickSignature();
+      if (force || sig !== this.hbSig) { this.hbSig = sig; this.lastSig = null; await this.liveRefresh(); }
+    } catch { /* reintenta en el próximo latido */ } finally { this.hbBusy = false; }
   }
 
   // Actualización en vivo durante el escaneo: nunca interrumpe lo que estás escribiendo.
@@ -868,8 +897,14 @@ class Pompa {
       t.value = '';
       this.state.picking = null;
       if (!files.length) return this.toast('Esa carpeta no tiene fotos compatibles');
-      const src = await sc.addSourceFromFiles(files);
-      return this.afterAdd(src);
+      try {
+        const src = await sc.addSourceFromFiles(files);
+        return await this.afterAdd(src);
+      } catch (err) {
+        console.error('[pompa] agregar carpeta', err);
+        this.toast(`No pude agregar la carpeta: ${err?.message || err}`);
+      }
+      return;
     }
     if (t.dataset?.a === 'rename') { await sc.renamePerson(t.dataset.v, t.value); await this.refresh(); this.toast('Nombre guardado'); }
     if (t.dataset?.a === 'threshold') { this.settings.threshold = Number(t.value); await db.setSetting('threshold', this.settings.threshold); }
@@ -922,7 +957,7 @@ class Pompa {
         case 'clean-all': { const g = this.cleanGroups().find((x) => x.k === v); const all = g.items.every((p) => S.cleanSel.has(p.id)); S.cleanSel = all ? new Set() : new Set(g.items.map((p) => p.id)); return this.render(); }
         case 'clean-hide': { const ids = [...S.cleanSel]; for (const id of ids) await sc.setPhotoHidden(id, true); S.cleanSel.clear(); this.toast(`${plural(ids.length, 'foto', 'fotos')} en la bóveda`); S.dupes = null; return this.refresh(); }
         case 'clean-delete': return this.cleanDelete();
-        case 'win': { const o = WINS.find((x) => x.k === v); this.settings.win = { w: o.w, h: o.h }; await db.setSetting('win', this.settings.win); this.placeSheet(); return this.render(); }
+        case 'win': { const o = WINS.find((x) => x.k === v); this.manualRect = null; this.settings.win = { w: o.w, h: o.h }; await db.setSetting('win', this.settings.win); this.placeSheet(); return this.render(); }
         case 'more': S.limit += PAGE; return this.render();
         case 'dupes-all': return this.hideDupes(S.dupes || []);
         case 'dupes-one': return this.hideDupes([(S.dupes || [])[Number(v)]].filter(Boolean));
@@ -977,8 +1012,10 @@ class Pompa {
   // Después de cada carpeta: ofrecer sumar otra antes de empezar (el selector de Android elige una por vez).
   async afterAdd(src) {
     this.scanQueue.add(src.id);
-    Object.assign(this.state, { tab: 'sources', view: null });
+    Object.assign(this.state, { tab: 'sources', view: null, picking: null });
+    if (!this.state.open) this.open();
     await this.refresh();
+    this.lastSig = null; this.render(); // redibujo explícito: la carpeta aparece sí o sí
     const nDirs = Object.keys(src.dirs || {}).length;
     this.toast(`${src.name}: ${plural(src.photoCount || 0, 'foto', 'fotos')} en ${plural(nDirs, 'carpeta', 'carpetas')}`);
     if (this.state.scan) return; // queda en fila y se ve en Carpetas como “En fila”
