@@ -47,6 +47,8 @@ public class MainActivity extends Activity {
     final Map<String, Uri> destDirs = new HashMap<>();
     /** carpeta/nombre → documento, para poder borrar lo que elegiste en “Borrar”. */
     final Map<String, Uri> picked = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Ruta relativa (subcarpeta/nombre) de cada foto del último selector, en el mismo orden que se entregan. */
+    volatile List<String> lastRels = new ArrayList<>();
     SharedPreferences prefs;
 
     @Override
@@ -166,11 +168,16 @@ public class MainActivity extends Activity {
             new Thread(new Runnable() {
                 public void run() {
                     final List<Uri> out = new ArrayList<>();
+                    final List<String> rels = new ArrayList<>();
                     try {
-                        walk(tree, DocumentsContract.getTreeDocumentId(tree), out, 0, folder);
+                        walk(tree, DocumentsContract.getTreeDocumentId(tree), out, 0, folder, "", rels);
                     } catch (Exception ignored) { }
+                    lastRels = rels;
                     runOnUiThread(new Runnable() {
-                        public void run() { cb.onReceiveValue(out.toArray(new Uri[0])); }
+                        public void run() {
+                            report(folder, out.size(), true);
+                            cb.onReceiveValue(out.toArray(new Uri[0]));
+                        }
                     });
                 }
             }).start();
@@ -197,7 +204,14 @@ public class MainActivity extends Activity {
         return name.isEmpty() ? "Almacenamiento" : name;
     }
 
-    void walk(Uri tree, String docId, List<Uri> out, int depth, String folder) {
+    /** Avisa a la galería cuántas fotos lleva encontradas (para que nunca parezca que no pasa nada). */
+    void report(final String folder, final int n, final boolean done) {
+        final String js = "window.__memora && window.__memora.pickProgress && window.__memora.pickProgress("
+                + org.json.JSONObject.quote(folder) + "," + n + "," + done + ")";
+        runOnUiThread(new Runnable() { public void run() { web.evaluateJavascript(js, null); } });
+    }
+
+    void walk(Uri tree, String docId, List<Uri> out, int depth, String folder, String prefix, List<String> rels) {
         if (out.size() >= MAX_FILES) return;
         Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId);
         Cursor c = getContentResolver().query(children, new String[]{
@@ -209,12 +223,15 @@ public class MainActivity extends Activity {
             while (c.moveToNext() && out.size() < MAX_FILES) {
                 String id = c.getString(0), mime = c.getString(1), name = c.getString(2);
                 if (name == null || name.startsWith(".")) continue;
+                String rel = prefix.isEmpty() ? name : prefix + "/" + name;
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
-                    if (depth < 6) walk(tree, id, out, depth + 1, folder);
+                    if (depth < 6) walk(tree, id, out, depth + 1, folder, rel, rels);
                 } else if (mime != null && mime.startsWith("image/")) {
                     Uri doc = DocumentsContract.buildDocumentUriUsingTree(tree, id);
                     out.add(doc);
-                    picked.put(folder + "/" + name, doc);
+                    rels.add(rel);
+                    picked.put(folder + "/" + rel, doc);
+                    if (out.size() % 100 == 0) report(folder, out.size(), false);
                 }
             }
         } finally {
@@ -261,6 +278,9 @@ public class MainActivity extends Activity {
         @JavascriptInterface public boolean isNative() { return true; }
 
         @JavascriptInterface public String lastFolderName() { return lastFolder; }
+
+        /** Rutas relativas (con subcarpeta) del último selector, como JSON. */
+        @JavascriptInterface public String pickedPaths() { return new org.json.JSONArray(lastRels).toString(); }
 
         @JavascriptInterface public void pickExportDir() {
             runOnUiThread(new Runnable() {

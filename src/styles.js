@@ -219,6 +219,24 @@ svg{display:block}
 .dialog .opt .oi svg{width:18px;height:18px}
 .dialog .opt.warn span:last-child{color:var(--danger)}
 
+/* Secciones de carpetas */
+.srcsec{margin-bottom:16px}
+.srcsec.off .albums{opacity:.4;filter:grayscale(1)}
+.srchead{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+.srchead .ic{width:32px;height:32px;border-radius:10px;background:var(--raise-2);display:grid;place-items:center;color:var(--accent);flex:none}
+.srchead .ic svg{width:17px;height:17px}
+.srchead .tx{flex:1;min-width:0}
+.srchead .t{font-family:var(--display);font-size:16px;font-weight:800;letter-spacing:-.3px;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srchead .s{font-size:11px;color:var(--muted)}
+.srchead .s.warn{color:var(--accent)}
+.iconbtn.sm{width:32px;height:32px}
+.tag-st{font-family:var(--sans);font-size:9.5px;font-weight:700;letter-spacing:.3px;padding:2px 7px;border-radius:8px;background:var(--raise-2);color:var(--text-2)}
+.tag-st.on{background:var(--accent-soft);color:var(--accent)}
+.tag-st.ok{color:var(--muted)}
+.album .meta,.album .tx{display:flex}
+.album .tx{flex-direction:column}
+.banner b{font-weight:800}
+
 /* Borrar */
 .clean{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border-radius:16px;background:var(--raise);border:1px solid var(--line);margin-bottom:8px;transition:transform .12s}
 .clean:active{transform:scale(.98)}
@@ -348,8 +366,8 @@ input[type=range]{width:100%;accent-color:var(--accent);height:26px}
 .dialog .opt:active{background:var(--raise-2)}
 .dialog .opt .avatar{width:40px;height:40px}
 .dialog .opt span{font-size:13.5px;font-weight:700}
-.toast{position:fixed;z-index:2147483006;left:50%;top:calc(14px + env(safe-area-inset-top));transform:translate(-50%,-16px);opacity:0;
-  background:var(--text);color:var(--bg);font-size:12.5px;font-weight:700;padding:11px 16px;border-radius:20px;max-width:calc(100vw - 32px);
+.toast{position:absolute;z-index:5;left:50%;bottom:84px;transform:translate(-50%,12px);opacity:0;width:max-content;max-width:calc(100% - 28px);text-align:center;
+  background:var(--text);color:var(--bg);font-size:12px;font-weight:700;line-height:1.35;padding:10px 14px;border-radius:16px;
   transition:opacity .2s,transform .25s cubic-bezier(.2,.9,.3,1.2);pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,.35)}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 

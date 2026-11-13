@@ -7,7 +7,7 @@ import { issue } from './quality.js';
 import morphdom from '../vendor/morphdom-esm.js';
 
 const NATIVE = typeof window.MemoraNative !== 'undefined'; // dentro del APK de Android
-const VERSION = '2.4';
+const VERSION = '2.5';
 
 const sv = (p, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${p}</svg>`;
 const I = {
@@ -44,6 +44,7 @@ const I = {
   blur: sv('<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.5 2.5"/><circle cx="12" cy="12" r="3"/>'),
   moon: sv('<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/>'),
   sun: sv('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>'),
+  more: sv('<circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none"/>'),
   del: sv('<path d="M9 6h11v12H9l-5-6z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/>'),
 };
 
@@ -115,10 +116,10 @@ class Pompa {
         <nav class="nav" role="tablist">
           ${TABS.map(([k, l, ic]) => `<button class="tab" role="tab" data-a="tab" data-v="${k}" aria-label="${l}">${ic}<span>${l}</span></button>`).join('')}
         </nav>
+        <div class="toast" role="status" aria-live="polite"></div>
         <div class="resize" role="slider" aria-label="Cambiar tamaño de la ventana" tabindex="0"><i></i></div>
       </section>
-      <input type="file" class="picker" webkitdirectory directory multiple accept="image/*" hidden>
-      <div class="toast" role="status" aria-live="polite"></div>`;
+      <input type="file" class="picker" webkitdirectory directory multiple accept="image/*" hidden>`;
     this.$ = (s) => this.root.querySelector(s);
     this.$('.dot svg').classList.add('ico');
     const bubble = this.$('.bubble');
@@ -315,8 +316,14 @@ class Pompa {
     if (!this.state.open) this.open(); else this.render();
   }
 
-  // El APK avisa apenas elegís una carpeta, mientras la recorre.
-  pickingFolder() { this.toast('Leyendo la carpeta…'); }
+  // El APK avisa apenas elegís una carpeta y mientras la recorre: así nunca parece que no pasa nada.
+  pickingFolder() { this.pickProgress('la carpeta', 0, false); }
+  pickProgress(folder, n, done) {
+    this.state.picking = done ? null : { folder, n };
+    if (!this.state.open) this.open();
+    if (this.state.tab !== 'sources' || this.state.view) { this.state.tab = 'sources'; this.state.view = null; }
+    this.render();
+  }
 
   /* ---------- Datos ---------- */
   // URL estable por foto/cara: la misma miniatura conserva su URL entre actualizaciones (sin parpadeo negro).
@@ -356,6 +363,7 @@ class Pompa {
     if (view?.type === 'person') html = this.viewPerson(view.id);
     else if (view?.type === 'together') html = this.viewTogether(view.ids);
     else if (view?.type === 'clean') html = this.viewClean(view.cat);
+    else if (view?.type === 'album') html = this.viewAlbum(view.src, view.dir);
     else html = this[`tab_${tab}`]();
     // Sólo cambia lo que cambió: las miniaturas existentes quedan intactas y el campo donde escribís no se toca.
     const body = this.$('.body');
@@ -646,25 +654,59 @@ class Pompa {
   /* ---------- Carpetas ---------- */
   tab_sources() {
     const { sources, visible } = this.data;
-    const bySrc = new Map();
-    for (const p of visible) { const l = bySrc.get(p.sourceId) || []; if (l.length < 4) { l.push(p); bySrc.set(p.sourceId, l); } }
-    const cards = sources.map((s) => {
+    const pick = this.state.picking;
+    // Primeras 4 fotos ya ordenadas de cada subcarpeta (para el mosaico).
+    const covers = new Map();
+    for (const p of visible) {
+      const k = `${p.sourceId}|${p.path.includes('/') ? p.path.slice(0, p.path.lastIndexOf('/')) : ''}`;
+      const l = covers.get(k) || []; if (l.length < 4) { l.push(p); covers.set(k, l); }
+    }
+    const scanning = this.state.scan && this.state.scan.source;
+    const status = (s) => {
+      if (this.scanQueue.has(s.id)) return '<span class="tag-st">En fila</span>';
+      if (scanning === s.name) return '<span class="tag-st on">Importando</span>';
+      if (s.lastScan) return '<span class="tag-st ok">Lista</span>';
+      return '<span class="tag-st">Sin analizar</span>';
+    };
+    const sections = sources.map((s) => {
       const needs = s._access && s._access !== 'granted';
-      const cover = bySrc.get(s.id) || [];
-      return `<div class="album ${s.enabled ? '' : 'off'}" data-key="src-${s.id}">
-        <button class="cover" data-a="src-menu" data-v="${s.id}" aria-label="Opciones de ${esc(s.name)}">
-          ${cover.length ? cover.map((p) => `<img alt="" src="${this.photoUrl(p)}">`).join('') + '<i></i>'.repeat(Math.max(0, 4 - cover.length)) : `<span class="ph-empty">${I.folder}</span>`}
-        </button>
-        <div class="meta"><div class="tx"><p class="t">${esc(s.name)}</p>
-          <p class="s num ${needs ? 'warn' : ''}">${needs ? (s.kind === 'input' ? 'Volvé a elegirla' : 'Falta acceso') : plural(s.photoCount || 0, 'foto', 'fotos')}</p></div>
-          <button class="switch sm" role="switch" aria-checked="${s.enabled}" aria-label="Incluir ${esc(s.name)}" data-a="toggle-src" data-v="${s.id}"></button></div>
-      </div>`;
+      const dirs = Object.entries(s.dirs || { '': s.photoCount || 0 }).filter(([, n]) => n > 0).sort((x, y) => (x[0] === '' ? -1 : y[0] === '' ? 1 : y[1] - x[1]));
+      const albums = dirs.map(([d, n]) => {
+        const cover = covers.get(`${s.id}|${d}`) || [];
+        const label = d === '' ? s.name : d.split('/').pop();
+        return `<button class="album" data-key="al-${s.id}-${esc(d)}" data-a="open-album" data-v="${s.id}" data-d="${esc(d)}">
+          <span class="cover">${cover.length ? cover.map((p) => `<img alt="" src="${this.photoUrl(p)}">`).join('') + '<i></i>'.repeat(4 - cover.length) : `<span class="ph-empty">${I.folder}</span>`}</span>
+          <span class="meta"><span class="tx"><span class="t">${esc(label)}</span><span class="s num">${plural(n, 'foto', 'fotos')}</span></span></span></button>`;
+      }).join('');
+      return `<section class="srcsec ${s.enabled ? '' : 'off'}" data-key="sec-${s.id}">
+        <div class="srchead">
+          <span class="ic">${I.folder}</span>
+          <div class="tx"><p class="t">${esc(s.name)} ${status(s)}</p>
+            <p class="s num ${needs ? 'warn' : ''}">${needs ? (s.kind === 'input' ? 'Volvé a elegirla para ver los originales' : 'Falta dar acceso') : `${plural(s.photoCount || 0, 'foto', 'fotos')} · ${plural(dirs.length, 'carpeta', 'carpetas')}`}</p></div>
+          <button class="switch sm" role="switch" aria-checked="${s.enabled}" aria-label="Incluir ${esc(s.name)}" data-a="toggle-src" data-v="${s.id}"></button>
+          <button class="iconbtn sm" data-a="src-menu" data-v="${s.id}" aria-label="Opciones de ${esc(s.name)}">${I.more}</button>
+        </div>
+        <div class="albums">${albums}</div></section>`;
     }).join('');
-    return `<div class="albums">${cards}
-        <button class="album add" data-a="add-source"><span class="cover">${I.folderPlus}<b>Agregar carpeta</b></span>
-          <div class="meta"><div class="tx"><p class="t">Elegí varias</p><p class="s">una por vez</p></div></div></button></div>
-      ${sources.length ? `<button class="btn ghost block" style="margin-top:14px" data-a="scan" ${this.state.scan ? 'disabled' : ''}>${I.refresh}Escanear todo</button>` : ''}
-      <p class="note small" style="margin:14px 2px 0">Tocá una carpeta para ver opciones. Apagá el interruptor para sacarla de la vista sin borrar nada. Tus fotos originales no se tocan.</p>`;
+    return `${pick ? `<div class="banner"><p><b>Leyendo ${esc(pick.folder)}</b> · <span class="num">${nf.format(pick.n)}</span> fotos encontradas…</p></div>` : ''}
+      <button class="btn primary block" data-a="add-source" style="margin-bottom:14px">${I.folderPlus}Agregar carpeta</button>
+      ${sections || '<p class="note" style="text-align:center;padding:20px 8px">Elegí una carpeta, por ejemplo DCIM: se importan ella y todas sus subcarpetas, cada una con su cantidad de fotos.</p>'}
+      ${sources.length ? `<button class="btn ghost block" style="margin-top:6px" data-a="scan" ${this.state.scan ? 'disabled' : ''}>${I.refresh}Escanear todo</button>
+      <p class="note small" style="margin:12px 2px 0">Tocá un álbum para ver sus fotos. El interruptor saca la carpeta de la vista sin borrar nada.</p>` : ''}`;
+  }
+
+  viewAlbum(srcId, dir) {
+    const src = this.data.sources.find((x) => x.id === srcId);
+    if (!src) { this.state.view = null; return this.tab_sources(); }
+    const list = this.data.visible.filter((p) => p.sourceId === srcId && (p.path.includes('/') ? p.path.slice(0, p.path.lastIndexOf('/')) : '') === dir);
+    this.ctxList = list.map((p) => ({ photo: p }));
+    const total = (src.dirs || {})[dir] ?? list.length;
+    return `<div class="hero" style="padding-bottom:10px">
+        <button class="iconbtn back" data-a="back" aria-label="Volver">${I.back}</button>
+        <p class="brand" style="font-size:24px;margin-top:6px">${esc(dir === '' ? src.name : dir.split('/').pop())}</p>
+        <p class="sub num">${esc(src.name)}${dir ? ` / ${esc(dir)}` : ''} · ${plural(total, 'foto', 'fotos')}</p></div>
+      ${list.length ? this.timeline(list) : ''}
+      ${list.length < total ? `<p class="note small" style="text-align:center;margin-top:12px">Importando: ${nf.format(list.length)} de ${nf.format(total)} listas. Las demás aparecen solas.</p>` : ''}`;
   }
 
   // Menú de acciones de una carpeta.
@@ -824,6 +866,7 @@ class Pompa {
     if (t.classList?.contains('picker')) {
       const files = [...(t.files || [])]; // copiar ANTES de limpiar: limpiar el input vacía su lista
       t.value = '';
+      this.state.picking = null;
       if (!files.length) return this.toast('Esa carpeta no tiene fotos compatibles');
       const src = await sc.addSourceFromFiles(files);
       return this.afterAdd(src);
@@ -855,6 +898,7 @@ class Pompa {
           await sc.removeSource(v); this.toast('Carpeta quitada'); return this.refreshSources();
         }
         case 'src-menu': return this.srcMenu(v);
+        case 'open-album': S.view = { type: 'album', src: v, dir: el.dataset.d || '' }; S.limit = PAGE; this.$('.body').scrollTop = 0; return this.render();
         case 'open-person': S.view = { type: 'person', id: v }; this.$('.body').scrollTop = 0; return this.render();
         case 'sel-start': S.selecting = true; S.sel.clear(); return this.render();
         case 'sel-cancel': S.selecting = false; S.sel.clear(); return this.render();
@@ -919,7 +963,7 @@ class Pompa {
   }
 
   async addSource() {
-    if (!sc.supportsFSA()) { this.$('.picker').click(); return; } // Android, iOS y APK: selector del sistema
+    if (!sc.supportsFSA()) { this.$('.picker').click(); if (NATIVE) this.toast('Elegí la carpeta y tocá “Usar esta carpeta”'); return; } // Android, iOS y APK: selector del sistema
     let src;
     try { src = await sc.addSourceFromPicker(); } catch (err) {
       if (err?.name === 'AbortError' && err?.message?.toLowerCase().includes('abort')) return; // canceló el usuario
@@ -933,9 +977,12 @@ class Pompa {
   // Después de cada carpeta: ofrecer sumar otra antes de empezar (el selector de Android elige una por vez).
   async afterAdd(src) {
     this.scanQueue.add(src.id);
+    Object.assign(this.state, { tab: 'sources', view: null });
     await this.refresh();
-    if (this.state.scan) { this.toast(`“${src.name}” queda en la fila`); return; }
-    const more = await this.confirm(`“${src.name}” agregada`, '¿Querés sumar otra carpeta antes de empezar? Se analizan todas juntas, en segundo plano.', 'Agregar otra', false, 'Empezar');
+    const nDirs = Object.keys(src.dirs || {}).length;
+    this.toast(`${src.name}: ${plural(src.photoCount || 0, 'foto', 'fotos')} en ${plural(nDirs, 'carpeta', 'carpetas')}`);
+    if (this.state.scan) return; // queda en fila y se ve en Carpetas como “En fila”
+    const more = await this.confirm(`${src.name}: ${plural(src.photoCount || 0, 'foto', 'fotos')}`, `Encontré ${plural(nDirs, 'carpeta', 'carpetas')} con fotos. ¿Querés sumar otra carpeta antes de empezar? Se importan todas juntas, en segundo plano.`, 'Agregar otra', false, 'Empezar');
     if (more) { this.addSource(); return; }
     const ids = [...this.scanQueue]; this.scanQueue.clear();
     this.startScan(ids);

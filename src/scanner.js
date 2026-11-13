@@ -29,21 +29,42 @@ export async function addSourceFromPicker() {
   return src;
 }
 
+const dirOf = (path) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '');
+
+// Cuenta fotos por subcarpeta: { '': 4, 'Camera': 1200, 'Pies': 122 } (vacío = fotos sueltas en la raíz).
+export function countDirs(paths) {
+  const dirs = {};
+  for (const p of paths) { const d = dirOf(p); dirs[d] = (dirs[d] || 0) + 1; }
+  return dirs;
+}
+
 export async function addSourceFromFiles(fileList) {
-  const files = [...fileList].filter((f) => IMG_RE.test(f.name) || (f.type || '').startsWith('image/'));
-  const first = fileList[0];
+  const all = [...fileList];
+  let nativeName = ''; let nativePaths = null;
+  try {
+    nativeName = window.MemoraNative?.lastFolderName?.() || '';
+    const raw = window.MemoraNative?.pickedPaths?.();
+    if (raw) { const arr = JSON.parse(raw); if (arr.length === all.length) nativePaths = arr; }
+  } catch { /* sin puente */ }
+  // Ruta relativa de cada archivo (sin la carpeta elegida): 'Pies/IMG_01.jpg' o 'IMG_02.jpg'.
+  const relOf = (f, i) => {
+    if (nativePaths && nativePaths[i] && nativePaths[i].endsWith(f.name)) return nativePaths[i];
+    if (f.webkitRelativePath) return f.webkitRelativePath.split('/').slice(1).join('/') || f.name;
+    return f.name;
+  };
+  const entries = all.map((f, i) => ({ f, path: relOf(f, i) })).filter(({ f }) => IMG_RE.test(f.name) || (f.type || '').startsWith('image/'));
+  const first = all[0];
   const rel = (first && first.webkitRelativePath) || '';
-  let nativeName = '';
-  try { nativeName = window.MemoraNative?.lastFolderName?.() || ''; } catch { /* sin puente */ }
   const name = rel.split('/')[0] || nativeName || 'Carpeta';
   const sources = await db.all('sources');
   let src = sources.find((s) => s.kind === 'input' && s.name === name);
-  if (!src) {
-    src = { id: db.uid('src'), name, kind: 'input', enabled: true, recursive: true, addedAt: Date.now(), photoCount: 0 };
-    await db.put('sources', src);
-  }
+  if (!src) src = { id: db.uid('src'), name, kind: 'input', enabled: true, recursive: true, addedAt: Date.now(), photoCount: 0 };
+  // Se ve al instante: la carpeta y sus subcarpetas con su cantidad de fotos, antes de analizar nada.
+  src.dirs = countDirs(entries.map((e) => e.path));
+  src.photoCount = entries.length;
+  await db.put('sources', src);
   const map = new Map();
-  files.forEach((f) => map.set((f.webkitRelativePath || f.name).split('/').slice(1).join('/') || f.name, f));
+  entries.forEach(({ f, path }) => map.set(path, f));
   sessionFiles.set(src.id, map);
   return src;
 }
@@ -286,12 +307,28 @@ export async function scan({ sourceIds = null, onProgress = () => {}, signal } =
     let files;
     try { files = await listFiles(src); } catch { report.blocked.push(src.name); continue; }
     const known = new Map((await db.byIndex('photos', 'sourceId', src.id)).map((p) => [p.id, p]));
+    // Índices viejos guardaban sólo el nombre (sin subcarpeta): se migran sin perder caras, nombres ni favoritas.
+    const flat = new Map();
+    for (const p of known.values()) if (!p.path.includes('/')) flat.set(`${p.name}|${p.size}`, p);
     const seen = new Set();
     let done = 0;
     for (const f of files) {
       if (signal?.aborted) return { ...report, aborted: true };
       const id = `${src.id}:${f.path}`;
       seen.add(id);
+      if (!known.has(id) && f.path.includes('/')) {
+        try {
+          const file0 = await f.getFile();
+          const old = flat.get(`${file0.name}|${file0.size}`);
+          if (old && !seen.has(old.id)) {
+            const moved = { ...old, id, path: f.path };
+            const faces = await db.byIndex('faces', 'photoId', old.id);
+            faces.forEach((x) => { x.photoId = id; });
+            await db.put('photos', moved); await db.putMany('faces', faces); await db.del('photos', old.id);
+            known.delete(old.id); known.set(id, moved); flat.delete(`${file0.name}|${file0.size}`);
+          }
+        } catch { /* sigue como foto nueva */ }
+      }
       onProgress({ phase: 'index', label: 'Ordenando fotos', source: src.name, done: done++, total: files.length });
       let file;
       try { file = await f.getFile(); } catch { continue; }
@@ -328,6 +365,7 @@ export async function scan({ sourceIds = null, onProgress = () => {}, signal } =
     for (const k of gone) await dropPhotoFaces(k, persons);
     await db.delMany('photos', gone);
     src.photoCount = seen.size; src.lastScan = Date.now();
+    src.dirs = countDirs(files.map((x) => x.path));
     await db.put('sources', src);
   }
   onProgress({ phase: 'indexed', label: 'Fotos ordenadas', source: '', done: 1, total: 1, pending: queue.length });
@@ -398,7 +436,7 @@ export async function deletePhotos(photos, onProgress = () => {}) {
         await dir.removeEntry(parts.at(-1));
         ok = true;
       } else if (src?.kind === 'input' && typeof window.MemoraNative !== 'undefined') {
-        ok = !!window.MemoraNative.deleteFile(src.name, p.name);
+        ok = !!window.MemoraNative.deleteFile(src.name, p.path);
       } else { out.cantHere++; continue; }
     } catch (e) { console.warn('[pompa] no se pudo borrar', p.path, e); ok = false; }
     if (!ok) { out.failed++; continue; }
